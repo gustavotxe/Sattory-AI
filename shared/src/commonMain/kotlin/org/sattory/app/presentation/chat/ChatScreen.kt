@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
+import org.sattory.app.model.ModelStatus
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = koinViewModel()) {
@@ -34,8 +35,10 @@ fun ChatScreen(viewModel: ChatViewModel = koinViewModel()) {
             Row(Modifier.fillMaxSize()) {
                 DesktopNavigation(
                     selected = state.selectedDestination,
+                    modelStatus = state.modelStatus,
                     onSelect = { viewModel.onIntent(ChatIntent.DestinationSelected(it)) },
                     onNewChat = { viewModel.onIntent(ChatIntent.NewConversation) },
+                    onRetryModel = { viewModel.onIntent(ChatIntent.RetryModelDownload) },
                 )
                 ChatScaffold(
                     state = state,
@@ -61,6 +64,7 @@ private fun MobileChatLayout(state: ChatState, onIntent: (ChatIntent) -> Unit) {
         drawerContent = {
             MobileDrawerContent(
                 selected = state.selectedDestination,
+                modelStatus = state.modelStatus,
                 onSelect = {
                     onIntent(ChatIntent.DestinationSelected(it))
                     scope.launch { drawerState.close() }
@@ -69,6 +73,7 @@ private fun MobileChatLayout(state: ChatState, onIntent: (ChatIntent) -> Unit) {
                     onIntent(ChatIntent.NewConversation)
                     scope.launch { drawerState.close() }
                 },
+                onRetryModel = { onIntent(ChatIntent.RetryModelDownload) },
             )
         },
     ) {
@@ -112,30 +117,39 @@ private fun ChatScaffold(
 @Composable
 private fun MobileDrawerContent(
     selected: ChatDestination,
+    modelStatus: ModelStatus,
     onSelect: (ChatDestination) -> Unit,
     onNewChat: () -> Unit,
+    onRetryModel: () -> Unit,
 ) {
     ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
-        NavigationContent(selected, onSelect, onNewChat, Modifier.fillMaxSize().padding(16.dp))
+        NavigationContent(selected, modelStatus, onSelect, onNewChat, onRetryModel, Modifier.fillMaxSize().padding(16.dp))
     }
 }
 
 @Composable
 private fun DesktopNavigation(
     selected: ChatDestination,
+    modelStatus: ModelStatus,
     onSelect: (ChatDestination) -> Unit,
     onNewChat: () -> Unit,
+    onRetryModel: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-        NavigationContent(selected, onSelect, onNewChat, Modifier.width(248.dp).fillMaxHeight().padding(16.dp))
+        NavigationContent(
+            selected, modelStatus, onSelect, onNewChat, onRetryModel,
+            Modifier.width(248.dp).fillMaxHeight().padding(16.dp),
+        )
     }
 }
 
 @Composable
 private fun NavigationContent(
     selected: ChatDestination,
+    modelStatus: ModelStatus,
     onSelect: (ChatDestination) -> Unit,
     onNewChat: () -> Unit,
+    onRetryModel: () -> Unit,
     modifier: Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -168,19 +182,7 @@ private fun NavigationContent(
             )
         }
         Spacer(Modifier.weight(1f))
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Memory, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text("Modelo local", style = MaterialTheme.typography.labelLarge)
-                    Text("Ainda não configurado", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
+        ModelStatusCard(modelStatus, onRetryModel)
     }
 }
 
@@ -229,6 +231,9 @@ private fun ChatContent(
     }
 
     Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (state.modelStatus !is ModelStatus.Ready) {
+            ModelStatusBanner(state.modelStatus) { onIntent(ChatIntent.RetryModelDownload) }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state.messages.isEmpty()) {
                 WelcomeContent(Modifier.align(Alignment.Center), expanded)
@@ -247,6 +252,7 @@ private fun ChatContent(
         Composer(
             value = state.input,
             generating = state.isGenerating,
+            modelReady = state.modelStatus is ModelStatus.Ready,
             onValueChange = { onIntent(ChatIntent.InputChanged(it)) },
             onSend = { onIntent(ChatIntent.SendMessage) },
             expanded = expanded,
@@ -310,6 +316,7 @@ private fun ThinkingIndicator() {
 private fun Composer(
     value: String,
     generating: Boolean,
+    modelReady: Boolean,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
     expanded: Boolean,
@@ -333,8 +340,13 @@ private fun Composer(
                         value = value,
                         onValueChange = onValueChange,
                         modifier = Modifier.weight(1f),
+                        enabled = modelReady && !generating,
                         placeholder = {
-                            Text("Pergunte sobre seus documentos…", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                if (modelReady) "Pergunte sobre seus documentos…" else "Preparando modelo local…",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         },
                         minLines = 1,
                         maxLines = 5,
@@ -345,13 +357,65 @@ private fun Composer(
                             unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                         ),
                     )
-                    FilledIconButton(onClick = onSend, enabled = value.isNotBlank() && !generating) {
+                    FilledIconButton(onClick = onSend, enabled = value.isNotBlank() && !generating && modelReady) {
                         Icon(Icons.Rounded.ArrowUpward, "Enviar")
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ModelStatusCard(status: ModelStatus, onRetry: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Memory, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Modelo local", style = MaterialTheme.typography.labelLarge)
+                    Text(status.label(), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (status is ModelStatus.Downloading) {
+                status.progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) }
+                    ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            if (status is ModelStatus.Failed) {
+                TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) { Text("Tentar novamente") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelStatusBanner(status: ModelStatus, onRetry: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (status !is ModelStatus.Failed) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(10.dp))
+            }
+            Text(status.label(), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            if (status is ModelStatus.Failed) TextButton(onClick = onRetry) { Text("Tentar novamente") }
+        }
+    }
+}
+
+private fun ModelStatus.label(): String = when (this) {
+    ModelStatus.Checking -> "Verificando arquivo…"
+    ModelStatus.Queued -> "Download aguardando conexão…"
+    is ModelStatus.Downloading -> progress?.let { "Baixando ${(it * 100).toInt()}%" } ?: "Baixando modelo…"
+    ModelStatus.Verifying -> "Validando segurança do arquivo…"
+    ModelStatus.Ready -> "Pronto para uso"
+    is ModelStatus.Failed -> message
 }
 
 @Composable

@@ -8,19 +8,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import org.sattory.app.llm.AndroidLocalLlm
 import org.sattory.app.llm.UnavailableLocalLlm
-import java.io.File
+import org.sattory.app.model.ModelFileSpec
 
 class MainActivity : ComponentActivity() {
     private val localLlm by lazy {
-        AndroidLocalLlm(File(filesDir, "models/qwen3-1.7b-q4_k_m.gguf").absolutePath)
+        AndroidLocalLlm(ModelFileSpec.file(this).absolutePath)
     }
+    private val modelRepository by lazy { (application as SattoryApplication).modelRepository }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         setContent {
-            App(localLlm)
+            App(localLlm, modelRepository)
         }
     }
 

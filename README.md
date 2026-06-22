@@ -38,10 +38,12 @@ Run a short, non-UI inference check with:
 ./gradlew :desktopApp:nativeSmokeTest
 ```
 
-Android intentionally does not package the 1.2 GB model in the APK. Until the download flow is implemented,
-place it at `files/models/qwen3-1.7b-q4_k_m.gguf` in the app's internal storage (Android Studio's Device
-Explorer is the simplest option for development). The APK builds native CPU libraries for `arm64-v8a` and
-`x86_64`.
+Android intentionally does not package the 1.2 GB model in the APK. On first use, WorkManager downloads it
+to `files/models/qwen3-1.7b-q4_k_m.gguf`, verifies its SHA-256, and only then enables the chat. Missing or
+invalid files are downloaded again. The APK builds native CPU libraries for `arm64-v8a` and `x86_64`.
+
+Inference is streamed token by token through a cancellable Kotlin `Flow`. The native session retains the
+conversation and KV cache between turns; starting a new conversation explicitly resets both.
 
 ### Running tests
 
