@@ -18,6 +18,31 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
   - Hot reload: `./gradlew :desktopApp:hotRun --auto`
   - Standard run: `./gradlew :desktopApp:run`
 
+### Local LLM (llama.cpp)
+
+Initialize the pinned native dependency after cloning:
+
+```shell
+git submodule update --init --recursive
+```
+
+Desktop uses `local-models/qwen/qwen3-1.7b-q4_k_m.gguf` by default. Override it when needed:
+
+```shell
+./gradlew :desktopApp:run -PsattoryModelPath=/absolute/path/model.gguf
+```
+
+Run a short, non-UI inference check with:
+
+```shell
+./gradlew :desktopApp:nativeSmokeTest
+```
+
+Android intentionally does not package the 1.2 GB model in the APK. Until the download flow is implemented,
+place it at `files/models/qwen3-1.7b-q4_k_m.gguf` in the app's internal storage (Android Studio's Device
+Explorer is the simplest option for development). The APK builds native CPU libraries for `arm64-v8a` and
+`x86_64`.
+
 ### Running tests
 
 Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:

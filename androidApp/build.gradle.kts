@@ -23,6 +23,7 @@ dependencies {
 android {
     namespace = "org.sattory.app"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
+    ndkVersion = "29.0.13113456"
 
     defaultConfig {
         applicationId = "org.sattory.app"
@@ -30,6 +31,18 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DGGML_CPU_ALL_VARIANTS=OFF",
+                )
+            }
+        }
     }
     packaging {
         resources {
@@ -44,5 +57,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+    externalNativeBuild {
+        cmake {
+            path = file("../native/CMakeLists.txt")
+            version = "3.31.0"
+        }
     }
 }

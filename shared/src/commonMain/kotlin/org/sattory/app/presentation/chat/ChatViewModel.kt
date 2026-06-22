@@ -2,14 +2,14 @@ package org.sattory.app.presentation.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.sattory.app.llm.LocalLlm
 
-class ChatViewModel : ViewModel() {
+class ChatViewModel(private val localLlm: LocalLlm) : ViewModel() {
     private val _state = MutableStateFlow(ChatState())
     val state: StateFlow<ChatState> = _state.asStateFlow()
 
@@ -31,13 +31,19 @@ class ChatViewModel : ViewModel() {
         _state.update { it.copy(input = "", messages = it.messages + userMessage, isGenerating = true) }
 
         viewModelScope.launch {
-            delay(450)
-            val response = ChatMessage(
-                id = nextId(),
-                text = "A base da conversa está pronta. Quando conectarmos seus documentos e o modelo local, responderei usando apenas o contexto encontrado neles.",
-                isFromUser = false,
-            )
-            _state.update { it.copy(messages = it.messages + response, isGenerating = false) }
+            runCatching { localLlm.generate(prompt) }
+                .onSuccess { answer ->
+                    val response = ChatMessage(nextId(), answer, isFromUser = false)
+                    _state.update { it.copy(messages = it.messages + response, isGenerating = false) }
+                }
+                .onFailure { error ->
+                    val response = ChatMessage(
+                        nextId(),
+                        "Não foi possível executar o modelo local: ${error.message ?: error::class.simpleName}",
+                        isFromUser = false,
+                    )
+                    _state.update { it.copy(messages = it.messages + response, isGenerating = false) }
+                }
         }
     }
 

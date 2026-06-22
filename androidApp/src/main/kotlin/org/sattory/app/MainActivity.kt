@@ -6,20 +6,32 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import org.sattory.app.llm.AndroidLocalLlm
+import org.sattory.app.llm.UnavailableLocalLlm
+import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private val localLlm by lazy {
+        AndroidLocalLlm(File(filesDir, "models/qwen3-1.7b-q4_k_m.gguf").absolutePath)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         setContent {
-            App()
+            App(localLlm)
         }
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) localLlm.close()
+        super.onDestroy()
     }
 }
 
 @Preview
 @Composable
 fun AppAndroidPreview() {
-    App()
+    App(UnavailableLocalLlm("Pré-visualização sem modelo local"))
 }
