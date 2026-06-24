@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -18,6 +19,10 @@ dependencies {
 }
 
 val desktopPackageResourcesDir = layout.buildDirectory.dir("desktop-package-resources")
+val windowsInstallerResourcesDir = layout.buildDirectory.dir("windows-installer-resources")
+val desktopBuildDir = layout.buildDirectory
+val desktopProjectDir = projectDir
+val wixToolsetPath = rootProject.layout.buildDirectory.dir("wix311").map { it.asFile.absolutePath }
 
 compose.desktop {
     application {
@@ -29,9 +34,18 @@ compose.desktop {
                 TargetFormat.Dmg, // macOS
                 TargetFormat.Deb  // Linux
             )
-            packageName = "org.sattory.app"
+            packageName = "Sattory"
             packageVersion = "1.0.0"
             appResourcesRootDir.set(desktopPackageResourcesDir)
+            vendor = "Sattory"
+
+
+            windows {
+                shortcut = true
+                menu = true
+                menuGroup = "Sattory"
+            }
+
         }
     }
 }
@@ -98,6 +112,11 @@ val prepareDesktopPackageResources by tasks.registering(Copy::class) {
     into(desktopPackageResourcesDir.map { it.dir(nativeLibraryResourcePath) })
 }
 
+val prepareWindowsInstallerResources by tasks.registering(Copy::class) {
+    from(layout.projectDirectory.dir("src/main/jpackage/windows"))
+    into(windowsInstallerResourcesDir)
+}
+
 tasks.matching {
     it.name in setOf(
         "prepareAppResources",
@@ -108,6 +127,54 @@ tasks.matching {
     )
 }.configureEach {
     dependsOn(prepareDesktopPackageResources)
+}
+
+tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().configureEach {
+    if (targetFormat == TargetFormat.Exe || targetFormat == TargetFormat.Msi) {
+        notCompatibleWithConfigurationCache("Reexecuta jpackage com recurso WiX customizado para limpeza de dados no uninstall.")
+        dependsOn(prepareWindowsInstallerResources)
+        doLast {
+            val argsFile = desktopBuildDir.file("compose/tmp/$name.args.txt").get().asFile
+            val patchedArgsFile = desktopBuildDir.file("compose/tmp/$name.custom-resources.args.txt").get().asFile
+            val customResourcesPath = windowsInstallerResourcesDir.get().asFile.absolutePath
+            val originalArgs = argsFile.readLines()
+            val patchedArgs = buildList {
+                var skipNext = false
+                originalArgs.forEach { line ->
+                    if (skipNext) {
+                        skipNext = false
+                    } else if (line == "--resource-dir") {
+                        skipNext = true
+                    } else {
+                        add(line)
+                    }
+                }
+                add("--resource-dir")
+                add(customResourcesPath)
+            }
+            patchedArgsFile.parentFile.mkdirs()
+            patchedArgsFile.writeText(patchedArgs.joinToString(System.lineSeparator()))
+
+            val targetExtension = when (targetFormat) {
+                TargetFormat.Exe -> "exe"
+                TargetFormat.Msi -> "msi"
+                else -> targetFormat.name.lowercase()
+            }
+            destinationDir.asFileTree.matching { include("*.$targetExtension") }.files.forEach { it.delete() }
+            val jpackage = File(javaHome.get()).resolve("bin/jpackage.exe").absolutePath
+            val process = ProcessBuilder(jpackage, "@${patchedArgsFile.absolutePath}")
+                .directory(desktopProjectDir)
+                .inheritIO()
+                .apply {
+                    environment()["PATH"] = "${wixToolsetPath.get()};${System.getenv("PATH")}"
+                }
+                .start()
+            val exitCode = process.waitFor()
+            if (exitCode != 0) {
+                error("jpackage com recursos customizados falhou com codigo $exitCode")
+            }
+        }
+    }
 }
 
 tasks.withType<JavaExec>().configureEach {

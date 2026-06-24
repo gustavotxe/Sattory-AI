@@ -14,9 +14,13 @@ import org.sattory.app.llm.LocalLlm
 import org.sattory.app.model.DesktopModelFiles
 import org.sattory.app.model.DesktopModelRepository
 import org.sattory.app.model.ModelRepository
+import org.sattory.app.platform.DesktopAppDirectories
+import org.sattory.app.platform.DesktopStorageRegistry
 
 fun main(args: Array<String>) {
-    val platformModule = desktopPlatformModule()
+    val directories = DesktopAppDirectories()
+    DesktopStorageRegistry(directories).registerStorageRoot()
+    val platformModule = desktopPlatformModule(directories)
 
     if ("--smoke-test" in args) {
         runSmokeTest(platformModule)
@@ -33,8 +37,10 @@ fun main(args: Array<String>) {
     }
 }
 
-private fun desktopPlatformModule(): Module = module {
-    single { DesktopModelFiles() }
+private fun desktopPlatformModule(directories: DesktopAppDirectories = DesktopAppDirectories()): Module = module {
+    single { directories }
+    single { DesktopStorageRegistry(get()) }
+    single { DesktopModelFiles(get()) }
     single { DesktopNativeLibraryResolver() }
     single<LocalLlm> {
         DesktopLocalLlm(
