@@ -1,6 +1,14 @@
 package org.sattory.app.presentation.chat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,35 +28,39 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 import org.sattory.app.model.ModelStatus
+import org.sattory.app.ui.theme.SattoryTheme
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = koinViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (maxWidth >= 800.dp) {
-            Row(Modifier.fillMaxSize()) {
-                DesktopNavigation(
-                    selected = state.selectedDestination,
-                    modelStatus = state.modelStatus,
-                    onSelect = { viewModel.onIntent(ChatIntent.DestinationSelected(it)) },
-                    onNewChat = { viewModel.onIntent(ChatIntent.NewConversation) },
-                    onRetryModel = { viewModel.onIntent(ChatIntent.RetryModelDownload) },
-                )
-                ChatScaffold(
-                    state = state,
-                    onIntent = viewModel::onIntent,
-                    expanded = true,
-                    modifier = Modifier.weight(1f),
-                )
+    SattoryTheme(darkTheme = state.themeMode == ThemeMode.Dark) {
+        BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            if (maxWidth >= 800.dp) {
+                Row(Modifier.fillMaxSize()) {
+                    DesktopNavigation(
+                        selected = state.selectedDestination,
+                        modelStatus = state.modelStatus,
+                        expanded = state.desktopNavigationExpanded,
+                        onSelect = { viewModel.onIntent(ChatIntent.DestinationSelected(it)) },
+                        onNewChat = { viewModel.onIntent(ChatIntent.NewConversation) },
+                        onRetryModel = { viewModel.onIntent(ChatIntent.RetryModelDownload) },
+                        onToggleExpanded = { viewModel.onIntent(ChatIntent.ToggleDesktopNavigation) },
+                    )
+                    ChatScaffold(
+                        state = state,
+                        onIntent = viewModel::onIntent,
+                        expanded = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                MobileChatLayout(state, viewModel::onIntent)
             }
-        } else {
-            MobileChatLayout(state, viewModel::onIntent)
         }
     }
 }
@@ -100,6 +112,7 @@ private fun ChatScaffold(
         topBar = {
             ChatTopBar(
                 compact = !expanded,
+                selected = state.selectedDestination,
                 onMenuClick = onMenuClick,
                 onNewChat = { onIntent(ChatIntent.NewConversation) },
             )
@@ -122,8 +135,18 @@ private fun MobileDrawerContent(
     onNewChat: () -> Unit,
     onRetryModel: () -> Unit,
 ) {
-    ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
-        NavigationContent(selected, modelStatus, onSelect, onNewChat, onRetryModel, Modifier.fillMaxSize().padding(16.dp))
+    ModalDrawerSheet(
+        modifier = Modifier.width(320.dp),
+        drawerContainerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        NavigationContent(
+            selected = selected,
+            modelStatus = modelStatus,
+            onSelect = onSelect,
+            onNewChat = onNewChat,
+            onRetryModel = onRetryModel,
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+        )
     }
 }
 
@@ -131,15 +154,39 @@ private fun MobileDrawerContent(
 private fun DesktopNavigation(
     selected: ChatDestination,
     modelStatus: ModelStatus,
+    expanded: Boolean,
     onSelect: (ChatDestination) -> Unit,
     onNewChat: () -> Unit,
     onRetryModel: () -> Unit,
+    onToggleExpanded: () -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
-        NavigationContent(
-            selected, modelStatus, onSelect, onNewChat, onRetryModel,
-            Modifier.width(248.dp).fillMaxHeight().padding(16.dp),
-        )
+    val width by animateDpAsState(if (expanded) 312.dp else 76.dp)
+    Surface(
+        modifier = Modifier.width(width).fillMaxHeight(),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        shadowElevation = 1.dp,
+    ) {
+        if (expanded) {
+            NavigationContent(
+                selected = selected,
+                modelStatus = modelStatus,
+                showDesktopToggle = true,
+                onSelect = onSelect,
+                onNewChat = onNewChat,
+                onRetryModel = onRetryModel,
+                onToggleExpanded = onToggleExpanded,
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+            )
+        } else {
+            CompactDesktopNavigation(
+                selected = selected,
+                onSelect = onSelect,
+                onNewChat = onNewChat,
+                onToggleExpanded = onToggleExpanded,
+                modifier = Modifier.fillMaxSize().padding(vertical = 14.dp, horizontal = 10.dp),
+            )
+        }
     }
 }
 
@@ -147,63 +194,232 @@ private fun DesktopNavigation(
 private fun NavigationContent(
     selected: ChatDestination,
     modelStatus: ModelStatus,
+    showDesktopToggle: Boolean = false,
     onSelect: (ChatDestination) -> Unit,
     onNewChat: () -> Unit,
     onRetryModel: () -> Unit,
+    onToggleExpanded: () -> Unit = {},
     modifier: Modifier,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        NavigationHeader(showDesktopToggle, onToggleExpanded)
+        FilledTonalButton(
+            onClick = onNewChat,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(18.dp),
+        ) {
+            Icon(Icons.Outlined.AddComment, null)
+            Spacer(Modifier.width(10.dp))
+            Text("Nova conversa", style = MaterialTheme.typography.labelLarge)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Espaco de trabalho",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        )
+        NavigationEntries.forEach { item ->
+            val isSelected = selected == item.destination
+            val itemHeight by animateDpAsState(if (isSelected) 64.dp else 58.dp)
+            NavigationDrawerItem(
+                icon = { Icon(item.destination.icon(), null) },
+                label = {
+                    Column {
+                        Text(item.destination.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            item.supportingText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
+                badge = item.badge?.let { badge ->
+                    {
+                        Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer) {
+                            Text(badge, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                },
+                selected = isSelected,
+                onClick = { onSelect(item.destination) },
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth().height(itemHeight),
+                colors = NavigationDrawerItemDefaults.colors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    unselectedContainerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        NavigationQuickStats()
+        ModelStatusCard(modelStatus, onRetryModel)
+    }
+}
+
+private data class NavigationEntry(
+    val destination: ChatDestination,
+    val supportingText: String,
+    val badge: String? = null,
+)
+
+private val NavigationEntries = listOf(
+    NavigationEntry(ChatDestination.Chat, "Conversa atual"),
+    NavigationEntry(ChatDestination.SavedConversations, "Colecao de chats", "0"),
+    NavigationEntry(ChatDestination.FileProfiles, "Fontes para RAG", "0"),
+    NavigationEntry(ChatDestination.History, "Linha do tempo"),
+    NavigationEntry(ChatDestination.Settings, "Preferencias do app"),
+)
+
+@Composable
+private fun NavigationHeader(showDesktopToggle: Boolean, onToggleExpanded: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = RoundedCornerShape(24.dp),
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp, 8.dp, 8.dp, 20.dp),
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BrandMark()
             Spacer(Modifier.width(12.dp))
-            Text("Sattory", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+            Column(Modifier.weight(1f)) {
+                Text("Sattory", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "IA local para estudos",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (showDesktopToggle) {
+                IconButton(onClick = onToggleExpanded) {
+                    Icon(Icons.Outlined.KeyboardDoubleArrowLeft, "Recolher menu")
+                }
+            }
         }
-        FilledTonalButton(
-            onClick = onNewChat,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(14.dp),
-        ) {
-            Icon(Icons.Rounded.Edit, null)
-            Spacer(Modifier.width(10.dp))
-            Text("Nova conversa")
+    }
+}
+
+@Composable
+private fun CompactDesktopNavigation(
+    selected: ChatDestination,
+    onSelect: (ChatDestination) -> Unit,
+    onNewChat: () -> Unit,
+    onToggleExpanded: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        BrandMark(size = 42)
+        FilledIconButton(onClick = onNewChat, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Outlined.AddComment, "Nova conversa")
         }
-        Spacer(Modifier.height(12.dp))
-        ChatDestination.entries.forEach { destination ->
-            NavigationDrawerItem(
-                icon = { Icon(destination.icon(), null) },
-                label = { Text(destination.label) },
-                selected = selected == destination,
-                onClick = { onSelect(destination) },
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        NavigationEntries.forEach { item ->
+            val isSelected = selected == item.destination
+            val containerColor by animateColorAsState(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
             )
+            Surface(
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).clickable { onSelect(item.destination) },
+                color = containerColor,
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        item.destination.icon(),
+                        item.destination.label,
+                        tint = if (isSelected) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
         }
         Spacer(Modifier.weight(1f))
-        ModelStatusCard(modelStatus, onRetryModel)
+        IconButton(onClick = onToggleExpanded) {
+            Icon(Icons.Outlined.KeyboardDoubleArrowRight, "Expandir menu")
+        }
+    }
+}
+
+@Composable
+private fun NavigationQuickStats() {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CompactMetric("0", "salvas", Modifier.weight(1f))
+        CompactMetric("0", "arquivos", Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun CompactMetric(value: String, label: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
 private fun ChatDestination.icon() = when (this) {
     ChatDestination.Chat -> Icons.Outlined.ChatBubbleOutline
-    ChatDestination.Library -> Icons.Outlined.FolderOpen
+    ChatDestination.SavedConversations -> Icons.Outlined.Bookmarks
+    ChatDestination.FileProfiles -> Icons.Outlined.FolderOpen
     ChatDestination.History -> Icons.Outlined.History
     ChatDestination.Settings -> Icons.Outlined.Settings
 }
 
+private fun ChatDestination.topBarTitle() = when (this) {
+    ChatDestination.Chat -> "Nova conversa"
+    ChatDestination.SavedConversations -> "Conversas salvas"
+    ChatDestination.FileProfiles -> "Arquivos adicionados"
+    ChatDestination.History -> "Historico"
+    ChatDestination.Settings -> "Ajustes"
+}
+
+private fun ChatDestination.topBarSubtitle() = when (this) {
+    ChatDestination.Chat -> "Nenhuma fonte selecionada"
+    ChatDestination.SavedConversations -> "Seus chats favoritos aparecerao aqui"
+    ChatDestination.FileProfiles -> "Perfis de texto para o futuro RAG"
+    ChatDestination.History -> "Conversas recentes e retomadas"
+    ChatDestination.Settings -> "Preferencias visuais e de modelo"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChatTopBar(compact: Boolean, onMenuClick: () -> Unit, onNewChat: () -> Unit) {
+private fun ChatTopBar(
+    compact: Boolean,
+    selected: ChatDestination,
+    onMenuClick: () -> Unit,
+    onNewChat: () -> Unit,
+) {
     CenterAlignedTopAppBar(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Nova conversa", style = MaterialTheme.typography.titleMedium)
+                Text(selected.topBarTitle(), style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
-                    "Nenhuma fonte selecionada",
+                    selected.topBarSubtitle(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         },
@@ -212,9 +428,9 @@ private fun ChatTopBar(compact: Boolean, onMenuClick: () -> Unit, onNewChat: () 
         },
         actions = {
             IconButton(onClick = onNewChat) { Icon(Icons.Outlined.AddComment, "Nova conversa") }
-            IconButton(onClick = {}) { Icon(Icons.Outlined.MoreVert, "Mais opções") }
+            IconButton(onClick = {}) { Icon(Icons.Outlined.Tune, "Ajustes rapidos") }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
     )
 }
 
@@ -235,7 +451,14 @@ private fun ChatContent(
             ModelStatusBanner(state.modelStatus) { onIntent(ChatIntent.RetryModelDownload) }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (state.messages.isEmpty()) {
+            if (state.selectedDestination != ChatDestination.Chat) {
+                DestinationOverview(
+                    state = state,
+                    onIntent = onIntent,
+                    expanded = expanded,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            } else if (state.messages.isEmpty()) {
                 WelcomeContent(Modifier.align(Alignment.Center), expanded)
             } else {
                 LazyColumn(
@@ -244,20 +467,236 @@ private fun ChatContent(
                     contentPadding = PaddingValues(horizontal = if (expanded) 48.dp else 16.dp, vertical = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    items(state.messages, key = { it.id }) { MessageBubble(it, expanded) }
-                    if (state.isGenerating) item { ThinkingIndicator() }
+                    items(state.messages, key = { it.id }) { message ->
+                        MessageBubble(
+                            message = message,
+                            expanded = expanded,
+                            actionsVisible = state.selectedMessageId == message.id,
+                            onToggleActions = if (message.isFromUser && !state.isGenerating) {
+                                { onIntent(ChatIntent.ToggleMessageActions(message.id)) }
+                            } else {
+                                null
+                            },
+                            onEdit = if (message.isFromUser && !state.isGenerating) {
+                                { onIntent(ChatIntent.EditMessage(message.id)) }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                    if (state.isAwaitingFirstToken) item { ThinkingIndicator() }
                 }
             }
         }
-        Composer(
-            value = state.input,
-            generating = state.isGenerating,
-            modelReady = state.modelStatus is ModelStatus.Ready,
-            onValueChange = { onIntent(ChatIntent.InputChanged(it)) },
-            onSend = { onIntent(ChatIntent.SendMessage) },
-            expanded = expanded,
-        )
+        AnimatedVisibility(
+            visible = state.selectedDestination == ChatDestination.Chat,
+            enter = fadeIn() + slideInVertically { it / 3 },
+            exit = fadeOut() + slideOutVertically { it / 3 },
+        ) {
+            Composer(
+                value = state.input,
+                generating = state.isGenerating,
+                modelReady = state.modelStatus is ModelStatus.Ready,
+                editing = state.editingMessageId != null,
+                onValueChange = { onIntent(ChatIntent.InputChanged(it)) },
+                onSend = { onIntent(ChatIntent.SendMessage) },
+                onCancelEditing = { onIntent(ChatIntent.CancelEditing) },
+                expanded = expanded,
+            )
+        }
     }
+}
+
+@Composable
+private fun DestinationOverview(
+    state: ChatState,
+    onIntent: (ChatIntent) -> Unit,
+    expanded: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val destination = state.selectedDestination
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            horizontal = if (expanded) 48.dp else 16.dp,
+            vertical = if (expanded) 32.dp else 20.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        item {
+            SectionHero(destination, expanded)
+        }
+        destination.overviewItems().forEach { item ->
+            item {
+                OverviewCard(item, Modifier.widthIn(max = 760.dp).fillMaxWidth())
+            }
+        }
+        if (destination == ChatDestination.Settings) {
+            item {
+                SettingsPanel(
+                    themeMode = state.themeMode,
+                    desktopNavigationExpanded = state.desktopNavigationExpanded,
+                    onThemeSelected = { onIntent(ChatIntent.ThemeSelected(it)) },
+                    onToggleDesktopNavigation = { onIntent(ChatIntent.ToggleDesktopNavigation) },
+                    modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHero(destination: ChatDestination, expanded: Boolean) {
+    val container by animateColorAsState(
+        if (destination == ChatDestination.FileProfiles) {
+            MaterialTheme.colorScheme.tertiaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        }
+    )
+    Surface(
+        modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+        color = container,
+        shape = RoundedCornerShape(28.dp),
+    ) {
+        Row(
+            Modifier.padding(if (expanded) 24.dp else 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Icon(
+                    destination.icon(),
+                    null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(14.dp).size(26.dp),
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(destination.topBarTitle(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    destination.topBarSubtitle(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverviewCard(item: OverviewItem, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(item.icon, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            AssistChip(onClick = {}, label = { Text(item.tag) })
+        }
+    }
+}
+
+@Composable
+private fun SettingsPanel(
+    themeMode: ThemeMode,
+    desktopNavigationExpanded: Boolean,
+    onThemeSelected: (ThemeMode) -> Unit,
+    onToggleDesktopNavigation: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Contrast, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Tema do aplicativo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        "O app inicia em modo claro por padrao.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeSelected(mode) },
+                        label = { Text(mode.label) },
+                        leadingIcon = if (themeMode == mode) {
+                            { Icon(Icons.Outlined.Check, null, Modifier.size(18.dp)) }
+                        } else {
+                            null
+                        },
+                    )
+                }
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.WidthNormal, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Menu desktop expandido", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        if (desktopNavigationExpanded) "A sidebar mostra textos, status e atalhos." else "A sidebar compacta libera mais espaco para o chat.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = desktopNavigationExpanded,
+                    onCheckedChange = { onToggleDesktopNavigation() },
+                )
+            }
+        }
+    }
+}
+
+private data class OverviewItem(
+    val title: String,
+    val description: String,
+    val tag: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+)
+
+private fun ChatDestination.overviewItems(): List<OverviewItem> = when (this) {
+    ChatDestination.Chat -> emptyList()
+    ChatDestination.SavedConversations -> listOf(
+        OverviewItem("Nenhuma conversa fixada", "Quando o recurso for ligado, chats importantes ficarao neste espaco.", "UI pronta", Icons.Outlined.BookmarkBorder),
+        OverviewItem("Colecoes futuras", "Organize estudos, projetos e pesquisas em grupos separados.", "Em breve", Icons.Outlined.Inventory2),
+    )
+    ChatDestination.FileProfiles -> listOf(
+        OverviewItem("Perfis de arquivos", "Textos adicionados pelo usuario poderao ser revisados antes de entrar no RAG.", "0 fontes", Icons.Outlined.Description),
+        OverviewItem("Saude da base", "Espaco reservado para tamanho, data de importacao e status de indexacao.", "Planejado", Icons.Outlined.DataUsage),
+    )
+    ChatDestination.History -> listOf(
+        OverviewItem("Historico vazio", "As conversas recentes aparecerao aqui quando a persistencia for implementada.", "Local", Icons.Outlined.Schedule),
+        OverviewItem("Retomar contexto", "Area preparada para continuar conversas anteriores sem misturar fontes.", "Futuro", Icons.Outlined.Restore),
+    )
+    ChatDestination.Settings -> listOf(
+        OverviewItem("Aparencia", "Tema, densidade e preferencias de leitura poderao morar nesta secao.", "Material 3", Icons.Outlined.Palette),
+        OverviewItem("Modelo local", "Parametros do modelo e armazenamento ficarao agrupados com clareza.", "Privado", Icons.Outlined.Memory),
+    )
 }
 
 @Composable
@@ -282,7 +721,18 @@ private fun WelcomeContent(modifier: Modifier, expanded: Boolean) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, expanded: Boolean) {
+private fun MessageBubble(
+    message: ChatMessage,
+    expanded: Boolean,
+    actionsVisible: Boolean,
+    onToggleActions: (() -> Unit)?,
+    onEdit: (() -> Unit)?,
+) {
+    val bubbleShape = if (message.isFromUser) {
+        RoundedCornerShape(20.dp, 5.dp, 20.dp, 20.dp)
+    } else {
+        RoundedCornerShape(20.dp)
+    }
     Row(
         modifier = Modifier.fillMaxWidth().widthIn(max = 840.dp),
         horizontalArrangement = if (message.isFromUser) Arrangement.End else Arrangement.Start,
@@ -292,13 +742,25 @@ private fun MessageBubble(message: ChatMessage, expanded: Boolean) {
             BrandMark(size = 34)
             Spacer(Modifier.width(10.dp))
         }
-        Surface(
-            modifier = Modifier.widthIn(max = if (expanded) 620.dp else 300.dp),
-            color = if (message.isFromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-            shape = if (message.isFromUser) RoundedCornerShape(20.dp, 5.dp, 20.dp, 20.dp) else RoundedCornerShape(20.dp),
-            tonalElevation = if (message.isFromUser) 0.dp else 1.dp,
-        ) {
-            Text(message.text, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+        Column(horizontalAlignment = if (message.isFromUser) Alignment.End else Alignment.Start) {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = if (expanded) 620.dp else 300.dp)
+                    .clip(bubbleShape)
+                    .then(if (onToggleActions != null) Modifier.clickable(onClick = onToggleActions) else Modifier),
+                color = if (message.isFromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                shape = bubbleShape,
+                tonalElevation = if (message.isFromUser) 0.dp else 1.dp,
+            ) {
+                Text(message.text, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+            }
+            if (actionsVisible) onEdit?.let {
+                TextButton(onClick = it, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Editar")
+                }
+            }
         }
     }
 }
@@ -317,8 +779,10 @@ private fun Composer(
     value: String,
     generating: Boolean,
     modelReady: Boolean,
+    editing: Boolean,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
+    onCancelEditing: () -> Unit,
     expanded: Boolean,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -327,6 +791,17 @@ private fun Composer(
                 .padding(horizontal = if (expanded) 32.dp else 12.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            if (editing) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Editando mensagem", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onCancelEditing) { Text("Cancelar") }
+                }
+            }
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -335,7 +810,6 @@ private fun Composer(
                 shadowElevation = 2.dp,
             ) {
                 Row(Modifier.padding(8.dp), verticalAlignment = Alignment.Bottom) {
-                    IconButton(onClick = {}) { Icon(Icons.Outlined.AttachFile, "Adicionar documento") }
                     TextField(
                         value = value,
                         onValueChange = onValueChange,

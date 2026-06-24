@@ -12,18 +12,26 @@ dependencies {
 
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.koin.core)
 
     implementation(libs.compose.uiToolingPreview)
 }
+
+val desktopPackageResourcesDir = layout.buildDirectory.dir("desktop-package-resources")
 
 compose.desktop {
     application {
         mainClass = "org.sattory.app.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Exe, // Windows
+                TargetFormat.Msi, // Windows installer
+                TargetFormat.Dmg, // macOS
+                TargetFormat.Deb  // Linux
+            )
             packageName = "org.sattory.app"
             packageVersion = "1.0.0"
+            appResourcesRootDir.set(desktopPackageResourcesDir)
         }
     }
 }
@@ -45,6 +53,11 @@ val nativeLibraryRelativePath = when {
     isWindows -> "Release/sattory_llm.dll"
     isMac -> "libsattory_llm.dylib"
     else -> "libsattory_llm.so"
+}
+val nativeLibraryResourcePath = when {
+    isWindows -> "windows/native/windows"
+    isMac -> "macos/native/macos"
+    else -> "linux/native/linux"
 }
 
 val configureNative by tasks.registering(Exec::class) {
@@ -77,6 +90,24 @@ val buildNative by tasks.registering(Exec::class) {
     inputs.dir(rootProject.file("third_party/llama.cpp"))
     outputs.file(outputDir.resolve(nativeLibraryRelativePath))
     commandLine(cmakeCommand, "--build", outputDir.absolutePath, "--config", "Release", "--target", "sattory_llm")
+}
+
+val prepareDesktopPackageResources by tasks.registering(Copy::class) {
+    dependsOn(buildNative)
+    from(nativeBuildDir.map { it.file(nativeLibraryRelativePath) })
+    into(desktopPackageResourcesDir.map { it.dir(nativeLibraryResourcePath) })
+}
+
+tasks.matching {
+    it.name in setOf(
+        "prepareAppResources",
+        "createDistributable",
+        "packageDistributionForCurrentOS",
+        "packageExe",
+        "packageMsi",
+    )
+}.configureEach {
+    dependsOn(prepareDesktopPackageResources)
 }
 
 tasks.withType<JavaExec>().configureEach {
