@@ -32,6 +32,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 import org.sattory.app.model.ModelStatus
+import org.sattory.app.rag.domain.RagIndexState
+import org.sattory.app.rag.domain.RagSource
 import org.sattory.app.ui.theme.SattoryTheme
 
 @Composable
@@ -112,9 +114,10 @@ private fun ChatScaffold(
         topBar = {
             ChatTopBar(
                 compact = !expanded,
-                selected = state.selectedDestination,
+                state = state,
                 onMenuClick = onMenuClick,
-                onNewChat = { onIntent(ChatIntent.NewConversation) },
+                onRequestSave = { onIntent(ChatIntent.RequestSaveConversation) },
+                onIntent = onIntent,
             )
         },
     ) { padding ->
@@ -125,6 +128,7 @@ private fun ChatScaffold(
             expanded = expanded,
         )
     }
+    SaveConversationDialog(state = state, onIntent = onIntent)
 }
 
 @Composable
@@ -402,20 +406,28 @@ private fun ChatDestination.topBarSubtitle() = when (this) {
     ChatDestination.Settings -> "Preferencias visuais e de modelo"
 }
 
+private fun ChatState.topBarSubtitle(): String = when (selectedDestination) {
+    ChatDestination.Chat -> selectedCollection?.name ?: "Nenhuma fonte selecionada"
+    else -> selectedDestination.topBarSubtitle()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatTopBar(
     compact: Boolean,
-    selected: ChatDestination,
+    state: ChatState,
     onMenuClick: () -> Unit,
-    onNewChat: () -> Unit,
+    onRequestSave: () -> Unit,
+    onIntent: (ChatIntent) -> Unit,
 ) {
+    var collectionMenuExpanded by remember { mutableStateOf(false) }
+    val selected = state.selectedDestination
     CenterAlignedTopAppBar(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(selected.topBarTitle(), style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
-                    selected.topBarSubtitle(),
+                    state.topBarSubtitle(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -427,10 +439,141 @@ private fun ChatTopBar(
             if (compact) IconButton(onClick = onMenuClick) { Icon(Icons.Outlined.Menu, "Abrir menu") }
         },
         actions = {
-            IconButton(onClick = onNewChat) { Icon(Icons.Outlined.AddComment, "Nova conversa") }
-            IconButton(onClick = {}) { Icon(Icons.Outlined.Tune, "Ajustes rapidos") }
+            IconButton(
+                onClick = onRequestSave,
+                enabled = state.selectedDestination == ChatDestination.Chat &&
+                    state.messages.isNotEmpty() &&
+                    !state.isGenerating &&
+                    !state.isSavingConversation,
+            ) {
+                Icon(Icons.Outlined.BookmarkAdd, "Salvar conversa")
+            }
+            Box {
+                IconButton(
+                    onClick = { collectionMenuExpanded = true },
+                    enabled = selected == ChatDestination.Chat,
+                ) {
+                    Icon(
+                        if (state.selectedCollectionId == null) Icons.Outlined.Source else Icons.Outlined.FolderOpen,
+                        "Selecionar colecao",
+                    )
+                }
+                DropdownMenu(
+                    expanded = collectionMenuExpanded,
+                    onDismissRequest = { collectionMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("Nenhuma fonte")
+                                Text(
+                                    "Conversar sem RAG",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (state.selectedCollectionId == null) Icons.Outlined.Check else Icons.Outlined.Block,
+                                null,
+                            )
+                        },
+                        onClick = {
+                            onIntent(ChatIntent.CollectionSelected(null))
+                            collectionMenuExpanded = false
+                        },
+                    )
+                    if (state.collections.isNotEmpty()) {
+                        HorizontalDivider()
+                    }
+                    state.collections.forEach { collection ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(collection.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        "${collection.chunkCount} chunk(s)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (state.selectedCollectionId == collection.id) Icons.Outlined.CheckCircle else Icons.Outlined.Description,
+                                    null,
+                                )
+                            },
+                            onClick = {
+                                onIntent(ChatIntent.CollectionSelected(collection.id))
+                                collectionMenuExpanded = false
+                            },
+                        )
+                    }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("Gerenciar arquivos") },
+                        leadingIcon = { Icon(Icons.Outlined.FolderCopy, null) },
+                        onClick = {
+                            onIntent(ChatIntent.DestinationSelected(ChatDestination.FileProfiles))
+                            collectionMenuExpanded = false
+                        },
+                    )
+                }
+            }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+    )
+}
+
+@Composable
+private fun SaveConversationDialog(state: ChatState, onIntent: (ChatIntent) -> Unit) {
+    if (!state.showSaveConversationDialog) return
+
+    AlertDialog(
+        onDismissRequest = { onIntent(ChatIntent.DismissSaveConversation) },
+        icon = { Icon(Icons.Outlined.BookmarkAdd, null) },
+        title = { Text("Salvar conversa?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("A conversa atual sera salva localmente neste dispositivo.")
+                state.selectedCollection?.let {
+                    AssistChip(onClick = {}, label = { Text(it.name, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                }
+                state.saveConversationMessage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.isSavingConversation) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onIntent(ChatIntent.ConfirmSaveConversation) },
+                enabled = !state.isSavingConversation,
+            ) {
+                if (state.isSavingConversation) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Salvar")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = { onIntent(ChatIntent.DismissSaveConversation) },
+                enabled = !state.isSavingConversation,
+            ) {
+                Text("Cancelar")
+            }
+        },
     )
 }
 
@@ -451,7 +594,14 @@ private fun ChatContent(
             ModelStatusBanner(state.modelStatus) { onIntent(ChatIntent.RetryModelDownload) }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (state.selectedDestination != ChatDestination.Chat) {
+            if (state.selectedDestination == ChatDestination.FileProfiles) {
+                FileProfilesContent(
+                    state = state,
+                    onIntent = onIntent,
+                    expanded = expanded,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            } else if (state.selectedDestination != ChatDestination.Chat) {
                 DestinationOverview(
                     state = state,
                     onIntent = onIntent,
@@ -459,7 +609,11 @@ private fun ChatContent(
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             } else if (state.messages.isEmpty()) {
-                WelcomeContent(Modifier.align(Alignment.Center), expanded)
+                WelcomeContent(
+                    modifier = Modifier.align(Alignment.Center),
+                    expanded = expanded,
+                    selectedCollectionName = state.selectedCollection?.name,
+                )
             } else {
                 LazyColumn(
                     state = listState,
@@ -485,6 +639,11 @@ private fun ChatContent(
                         )
                     }
                     if (state.isAwaitingFirstToken) item { ThinkingIndicator() }
+                    if (state.activeSources.isNotEmpty()) {
+                        item {
+                            SourceStrip(state.activeSources, Modifier.fillMaxWidth().widthIn(max = 840.dp))
+                        }
+                    }
                 }
             }
         }
@@ -527,6 +686,23 @@ private fun DestinationOverview(
         item {
             SectionHero(destination, expanded)
         }
+        if (destination == ChatDestination.SavedConversations) {
+            if (state.savedConversations.isEmpty()) {
+                item {
+                    EmptySavedConversationsCard(Modifier.widthIn(max = 760.dp).fillMaxWidth())
+                }
+            } else {
+                items(state.savedConversations, key = { it.id }) { conversation ->
+                    SavedConversationCard(
+                        title = conversation.title,
+                        subtitle = conversation.collectionTitle ?: "Sem fonte vinculada",
+                        messageCount = conversation.messageCount,
+                        onDelete = { onIntent(ChatIntent.DeleteSavedConversation(conversation.id)) },
+                        modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+                    )
+                }
+            }
+        }
         destination.overviewItems().forEach { item ->
             item {
                 OverviewCard(item, Modifier.widthIn(max = 760.dp).fillMaxWidth())
@@ -541,6 +717,283 @@ private fun DestinationOverview(
                     onToggleDesktopNavigation = { onIntent(ChatIntent.ToggleDesktopNavigation) },
                     modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptySavedConversationsCard(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.BookmarkBorder, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text("Nenhuma conversa salva", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Text(
+                    "Use o icone de salvar na conversa para guardar um chat localmente.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedConversationCard(
+    title: String,
+    subtitle: String,
+    messageCount: Int,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Bookmark, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "$subtitle • $messageCount mensagem(ns)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, "Excluir conversa salva")
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileProfilesContent(
+    state: ChatState,
+    onIntent: (ChatIntent) -> Unit,
+    expanded: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            horizontal = if (expanded) 48.dp else 16.dp,
+            vertical = if (expanded) 32.dp else 20.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        item { SectionHero(ChatDestination.FileProfiles, expanded) }
+        item {
+            RagStatusPanel(
+                embeddingStatus = state.embeddingModelStatus,
+                indexState = state.ragIndexState,
+                onRetry = { onIntent(ChatIntent.RetryEmbeddingModelDownload) },
+                modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+            )
+        }
+        item {
+            CollectionSelectorPanel(
+                state = state,
+                onIntent = onIntent,
+                modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+            )
+        }
+        item {
+            CreateCollectionPanel(
+                state = state,
+                onIntent = onIntent,
+                modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RagStatusPanel(
+    embeddingStatus: ModelStatus,
+    indexState: RagIndexState,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Hub, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("RAG local", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        "Embeddings multilingual-e5-small para PT e EN.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text("Modelo: ${embeddingStatus.label()}", style = MaterialTheme.typography.bodySmall)
+            if (embeddingStatus is ModelStatus.Downloading) {
+                embeddingStatus.progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) }
+                    ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            when (indexState) {
+                RagIndexState.Indexing -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                is RagIndexState.Failed -> Text(indexState.message, color = MaterialTheme.colorScheme.error)
+                else -> Unit
+            }
+            if (embeddingStatus is ModelStatus.Failed) {
+                TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) { Text("Tentar novamente") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionSelectorPanel(
+    state: ChatState,
+    onIntent: (ChatIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.FolderCopy, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Colecao ativa", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        state.selectedCollection?.name ?: "Nenhuma fonte selecionada",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                AssistChip(onClick = { onIntent(ChatIntent.CollectionSelected(null)) }, label = { Text("Limpar") })
+            }
+            if (state.collections.isEmpty()) {
+                Text("Crie uma colecao com texto colado para usar RAG na conversa.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                state.collections.forEach { collection ->
+                    val selected = state.selectedCollectionId == collection.id
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .clickable { onIntent(ChatIntent.CollectionSelected(collection.id)) },
+                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.Description,
+                                null,
+                                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(collection.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${collection.documentCount} texto(s), ${collection.chunkCount} chunk(s)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            IconButton(onClick = { onIntent(ChatIntent.EditCollection(collection.id)) }) {
+                                Icon(Icons.Outlined.Edit, "Editar colecao")
+                            }
+                            IconButton(onClick = { onIntent(ChatIntent.DeleteCollection(collection.id)) }) {
+                                Icon(Icons.Outlined.Delete, "Excluir colecao")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateCollectionPanel(
+    state: ChatState,
+    onIntent: (ChatIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val editing = state.editingCollectionId != null
+    val canSubmit = state.collectionTitleInput.isNotBlank() &&
+        state.collectionTextInput.trim().length >= 40 &&
+        state.ragIndexState != RagIndexState.Indexing &&
+        state.embeddingModelStatus is ModelStatus.Ready
+
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (editing) "Editar colecao" else "Nova colecao",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (editing) {
+                    TextButton(onClick = { onIntent(ChatIntent.CancelCollectionEditing) }) {
+                        Text("Cancelar")
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = state.collectionTitleInput,
+                onValueChange = { onIntent(ChatIntent.CollectionTitleChanged(it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Titulo") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = state.collectionTextInput,
+                onValueChange = { onIntent(ChatIntent.CollectionTextChanged(it)) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
+                label = { Text("Texto colado") },
+                minLines = 8,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                if (state.ragIndexState == RagIndexState.Indexing) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(10.dp))
+                }
+                Button(
+                    onClick = { onIntent(if (editing) ChatIntent.SaveCollection else ChatIntent.CreateCollection) },
+                    enabled = canSubmit,
+                ) {
+                    Icon(if (editing) Icons.Outlined.Save else Icons.Outlined.Add, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (editing) "Salvar colecao" else "Criar colecao")
+                }
             }
         }
     }
@@ -681,10 +1134,7 @@ private data class OverviewItem(
 
 private fun ChatDestination.overviewItems(): List<OverviewItem> = when (this) {
     ChatDestination.Chat -> emptyList()
-    ChatDestination.SavedConversations -> listOf(
-        OverviewItem("Nenhuma conversa fixada", "Quando o recurso for ligado, chats importantes ficarao neste espaco.", "UI pronta", Icons.Outlined.BookmarkBorder),
-        OverviewItem("Colecoes futuras", "Organize estudos, projetos e pesquisas em grupos separados.", "Em breve", Icons.Outlined.Inventory2),
-    )
+    ChatDestination.SavedConversations -> emptyList()
     ChatDestination.FileProfiles -> listOf(
         OverviewItem("Perfis de arquivos", "Textos adicionados pelo usuario poderao ser revisados antes de entrar no RAG.", "0 fontes", Icons.Outlined.Description),
         OverviewItem("Saude da base", "Espaco reservado para tamanho, data de importacao e status de indexacao.", "Planejado", Icons.Outlined.DataUsage),
@@ -700,7 +1150,7 @@ private fun ChatDestination.overviewItems(): List<OverviewItem> = when (this) {
 }
 
 @Composable
-private fun WelcomeContent(modifier: Modifier, expanded: Boolean) {
+private fun WelcomeContent(modifier: Modifier, expanded: Boolean, selectedCollectionName: String?) {
     Column(
         modifier = modifier.widthIn(max = 720.dp).padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -713,10 +1163,37 @@ private fun WelcomeContent(modifier: Modifier, expanded: Boolean) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Converse com seus documentos com privacidade e inteligência local.",
+            selectedCollectionName?.let { "Fonte ativa: $it" }
+                ?: "Converse com seus documentos com privacidade e inteligencia local.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun SourceStrip(sources: List<RagSource>, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.ManageSearch, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Fontes usadas", style = MaterialTheme.typography.labelLarge)
+            }
+            sources.take(3).forEach { source ->
+                Text(
+                    source.documentTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 

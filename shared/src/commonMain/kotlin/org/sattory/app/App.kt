@@ -4,15 +4,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
+import org.koin.core.qualifier.named
 import org.koin.core.module.Module
 import org.koin.dsl.module
+import org.sattory.app.conversation.data.UnavailableSavedConversationRepository
+import org.sattory.app.conversation.domain.DeleteSavedConversationUseCase
+import org.sattory.app.conversation.domain.ObserveSavedConversationsUseCase
+import org.sattory.app.conversation.domain.SaveConversationUseCase
+import org.sattory.app.conversation.domain.SavedConversationRepository
 import org.sattory.app.llm.LocalLlm
 import org.sattory.app.llm.UnavailableLocalLlm
 import org.sattory.app.model.ModelPreparationUseCase
 import org.sattory.app.model.ModelRepository
 import org.sattory.app.model.ReadyModelRepository
+import org.sattory.app.model.EmbeddingModelPreparationUseCase
 import org.sattory.app.presentation.chat.ChatScreen
 import org.sattory.app.presentation.chat.ChatViewModel
+import org.sattory.app.rag.data.UnavailableRagRepository
+import org.sattory.app.rag.data.UnavailableTextEmbedder
+import org.sattory.app.rag.domain.CreateCollectionUseCase
+import org.sattory.app.rag.domain.DeleteCollectionUseCase
+import org.sattory.app.rag.domain.GetCollectionDraftUseCase
+import org.sattory.app.rag.domain.ObserveCollectionsUseCase
+import org.sattory.app.rag.domain.RagPromptBuilder
+import org.sattory.app.rag.domain.RagRepository
+import org.sattory.app.rag.domain.RetrieveContextUseCase
+import org.sattory.app.rag.domain.TextEmbedder
+import org.sattory.app.rag.domain.UpdateCollectionUseCase
 
 @Composable
 fun App(
@@ -31,6 +49,7 @@ fun App(module: Module) {
 fun App(modules: List<Module> = listOf(defaultSattoryModule())) {
     KoinApplication(application = { modules(modules + commonSattoryModule()) }) {
         CloseLocalLlmOnDispose()
+        CloseTextEmbedderOnDispose()
         ChatScreen()
     }
 }
@@ -41,11 +60,26 @@ fun sattoryModule(
 ): Module = module {
     single { localLlm }
     single { modelRepository }
+    single(named(EMBEDDING_MODEL_REPOSITORY)) { ReadyModelRepository() }
+    single<RagRepository> { UnavailableRagRepository() }
+    single<TextEmbedder> { UnavailableTextEmbedder() }
+    single<SavedConversationRepository> { UnavailableSavedConversationRepository() }
 }
 
 private fun commonSattoryModule(): Module = module {
     single { ModelPreparationUseCase(get()) }
-    factory { ChatViewModel(get(), get()) }
+    single { EmbeddingModelPreparationUseCase(get(named(EMBEDDING_MODEL_REPOSITORY))) }
+    single { ObserveCollectionsUseCase(get()) }
+    single { CreateCollectionUseCase(get()) }
+    single { GetCollectionDraftUseCase(get()) }
+    single { UpdateCollectionUseCase(get()) }
+    single { DeleteCollectionUseCase(get()) }
+    single { RetrieveContextUseCase(get()) }
+    single { RagPromptBuilder() }
+    single { ObserveSavedConversationsUseCase(get()) }
+    single { SaveConversationUseCase(get()) }
+    single { DeleteSavedConversationUseCase(get()) }
+    factory { ChatViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }
 
 private fun defaultSattoryModule(): Module = sattoryModule(
@@ -60,3 +94,14 @@ private fun CloseLocalLlmOnDispose(localLlm: LocalLlm = koinInject()) {
         }
     }
 }
+
+@Composable
+private fun CloseTextEmbedderOnDispose(textEmbedder: TextEmbedder = koinInject()) {
+    DisposableEffect(textEmbedder) {
+        onDispose {
+            textEmbedder.close()
+        }
+    }
+}
+
+const val EMBEDDING_MODEL_REPOSITORY = "embeddingModelRepository"
