@@ -1,0 +1,44 @@
+package org.sattory.app.rag.data
+
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.sattory.app.rag.domain.TextEmbedder
+import java.io.File
+
+class NativeTextEmbedder(
+    private val modelPath: String,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
+) : TextEmbedder {
+    @Volatile
+    private var loaded = false
+
+    override suspend fun embedForDocument(text: String): FloatArray = embed("passage: $text")
+
+    override suspend fun embedForQuery(text: String): FloatArray = embed("query: $text")
+
+    private suspend fun embed(text: String): FloatArray = withContext(dispatcher) {
+        ensureLoaded()
+        NativeEmbeddingBridge.nativeEmbed(text.encodeToByteArray())
+    }
+
+    private fun ensureLoaded() {
+        if (loaded) return
+        require(File(modelPath).isFile) { "Modelo de embeddings nao encontrado em $modelPath" }
+        NativeEmbeddingBridge.nativeLoadEmbedding(modelPath)
+        loaded = true
+    }
+
+    override fun close() {
+        if (loaded) NativeEmbeddingBridge.nativeCloseEmbedding()
+        loaded = false
+    }
+}
+
+internal object NativeEmbeddingBridge {
+    init { System.loadLibrary("sattory_llm") }
+
+    external fun nativeLoadEmbedding(modelPath: String)
+    external fun nativeEmbed(text: ByteArray): FloatArray
+    external fun nativeCloseEmbedding()
+}
