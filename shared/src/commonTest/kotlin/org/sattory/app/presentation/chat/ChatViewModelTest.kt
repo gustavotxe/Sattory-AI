@@ -14,6 +14,7 @@ import org.sattory.app.llm.GenerationOptions
 import org.sattory.app.llm.LocalLlm
 import org.sattory.app.conversation.data.UnavailableSavedConversationRepository
 import org.sattory.app.conversation.domain.DeleteSavedConversationUseCase
+import org.sattory.app.conversation.domain.GetSavedConversationUseCase
 import org.sattory.app.conversation.domain.ObserveSavedConversationsUseCase
 import org.sattory.app.conversation.domain.SaveConversationUseCase
 import org.sattory.app.model.EmbeddingModelPreparationUseCase
@@ -32,6 +33,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.test.assertNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -85,6 +87,12 @@ class ChatViewModelTest {
         viewModel.onIntent(ChatIntent.NewConversation)
         advanceUntilIdle()
         currentState = viewModel.state.first()
+        assertTrue(currentState.showNewConversationDialog)
+        assertEquals(0, llm.resetCount)
+
+        viewModel.onIntent(ChatIntent.ConfirmNewConversation)
+        advanceUntilIdle()
+        currentState = viewModel.state.first()
         assertEquals(1, llm.resetCount)
         assertEquals(emptyList(), currentState.messages)
     }
@@ -105,6 +113,7 @@ class ChatViewModelTest {
             ragPromptBuilder = RagPromptBuilder(),
             observeSavedConversationsUseCase = ObserveSavedConversationsUseCase(conversationRepository),
             saveConversationUseCase = SaveConversationUseCase(conversationRepository),
+            getSavedConversationUseCase = GetSavedConversationUseCase(conversationRepository),
             deleteSavedConversationUseCase = DeleteSavedConversationUseCase(conversationRepository),
         )
     }

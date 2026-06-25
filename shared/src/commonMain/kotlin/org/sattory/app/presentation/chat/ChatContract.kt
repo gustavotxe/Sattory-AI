@@ -33,7 +33,13 @@ data class ChatState(
     val activeSources: List<RagSource> = emptyList(),
     val savedConversations: List<SavedConversationSummary> = emptyList(),
     val showSaveConversationDialog: Boolean = false,
+    val showOpenSavedConversationDialog: Boolean = false,
+    val showNewConversationDialog: Boolean = false,
+    val pendingSavedConversationId: Long? = null,
     val isSavingConversation: Boolean = false,
+    val currentSavedConversationId: Long? = null,
+    val currentConversationTitle: String? = null,
+    val currentConversationSaved: Boolean = false,
     val saveConversationMessage: String? = null,
 ) {
     val selectedCollection: DocumentCollection?
@@ -49,7 +55,6 @@ enum class ChatDestination(val label: String) {
     Chat("Conversa"),
     SavedConversations("Conversas salvas"),
     FileProfiles("Arquivos"),
-    History("Historico"),
     Settings("Ajustes"),
 }
 
@@ -66,11 +71,18 @@ sealed interface ChatIntent {
     data class EditCollection(val collectionId: Long) : ChatIntent
     data class DeleteCollection(val collectionId: Long) : ChatIntent
     data class DeleteSavedConversation(val conversationId: Long) : ChatIntent
+    data class OpenSavedConversation(val conversationId: Long) : ChatIntent
     data object ToggleDesktopNavigation : ChatIntent
     data object SendMessage : ChatIntent
     data object RequestSaveConversation : ChatIntent
     data object ConfirmSaveConversation : ChatIntent
     data object DismissSaveConversation : ChatIntent
+    data object ConfirmOpenSavedConversation : ChatIntent
+    data object SaveAndOpenSavedConversation : ChatIntent
+    data object DismissOpenSavedConversation : ChatIntent
+    data object ConfirmNewConversation : ChatIntent
+    data object SaveAndNewConversation : ChatIntent
+    data object DismissNewConversation : ChatIntent
     data object CreateCollection : ChatIntent
     data object SaveCollection : ChatIntent
     data object CancelCollectionEditing : ChatIntent

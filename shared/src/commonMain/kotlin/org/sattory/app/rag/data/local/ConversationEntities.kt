@@ -52,3 +52,8 @@ data class SavedConversationSummaryEntity(
     val savedAtMillis: Long,
     val messageCount: Int,
 )
+
+data class SavedConversationMessageRow(
+    val text: String,
+    val isFromUser: Boolean,
+)

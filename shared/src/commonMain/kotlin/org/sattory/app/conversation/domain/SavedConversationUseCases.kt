@@ -12,6 +12,12 @@ class SaveConversationUseCase(
     suspend operator fun invoke(input: SaveConversationInput): Long = repository.save(input)
 }
 
+class GetSavedConversationUseCase(
+    private val repository: SavedConversationRepository,
+) {
+    suspend operator fun invoke(conversationId: Long): SavedConversationDetail? = repository.findById(conversationId)
+}
+
 class DeleteSavedConversationUseCase(
     private val repository: SavedConversationRepository,
 ) {

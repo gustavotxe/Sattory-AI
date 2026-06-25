@@ -9,6 +9,7 @@ import org.koin.core.module.Module
 import org.koin.dsl.module
 import org.sattory.app.conversation.data.UnavailableSavedConversationRepository
 import org.sattory.app.conversation.domain.DeleteSavedConversationUseCase
+import org.sattory.app.conversation.domain.GetSavedConversationUseCase
 import org.sattory.app.conversation.domain.ObserveSavedConversationsUseCase
 import org.sattory.app.conversation.domain.SaveConversationUseCase
 import org.sattory.app.conversation.domain.SavedConversationRepository
@@ -78,8 +79,9 @@ private fun commonSattoryModule(): Module = module {
     single { RagPromptBuilder() }
     single { ObserveSavedConversationsUseCase(get()) }
     single { SaveConversationUseCase(get()) }
+    single { GetSavedConversationUseCase(get()) }
     single { DeleteSavedConversationUseCase(get()) }
-    factory { ChatViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    factory { ChatViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }
 
 private fun defaultSattoryModule(): Module = sattoryModule(

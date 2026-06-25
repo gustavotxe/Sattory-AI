@@ -5,7 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import org.sattory.app.conversation.domain.ConversationMessageDraft
 import org.sattory.app.conversation.domain.SaveConversationInput
+import org.sattory.app.conversation.domain.SavedConversationDetail
 import org.sattory.app.conversation.domain.SavedConversationRepository
 import org.sattory.app.conversation.domain.SavedConversationSummary
 import org.sattory.app.rag.data.currentEpochMillis
@@ -32,7 +34,8 @@ class RoomSavedConversationRepository(
     override suspend fun save(input: SaveConversationInput): Long = withContext(ioDispatcher) {
         val messages = input.messages.filter { it.text.isNotBlank() }
         require(messages.isNotEmpty()) { "Nao ha mensagens para salvar" }
-        dao.insertConversationWithMessages(
+        dao.upsertConversationWithMessages(
+            conversationId = input.conversationId,
             conversation = SavedConversationEntity(
                 title = input.title.trim().ifBlank { "Conversa sem titulo" },
                 collectionId = input.collectionId,
@@ -40,6 +43,20 @@ class RoomSavedConversationRepository(
                 savedAtMillis = currentEpochMillis(),
             ),
             messages = messages.map { it.isFromUser to it.text },
+        )
+    }
+
+    override suspend fun findById(conversationId: Long): SavedConversationDetail? = withContext(ioDispatcher) {
+        val conversation = dao.conversationById(conversationId) ?: return@withContext null
+        val messages = dao.messagesForConversation(conversationId).map {
+            ConversationMessageDraft(text = it.text, isFromUser = it.isFromUser)
+        }
+        SavedConversationDetail(
+            id = conversation.id,
+            title = conversation.title,
+            collectionId = conversation.collectionId,
+            collectionTitle = conversation.collectionTitle,
+            messages = messages,
         )
     }
 

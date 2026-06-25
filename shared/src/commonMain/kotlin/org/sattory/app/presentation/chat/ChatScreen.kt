@@ -129,6 +129,8 @@ private fun ChatScaffold(
         )
     }
     SaveConversationDialog(state = state, onIntent = onIntent)
+    OpenSavedConversationDialog(state = state, onIntent = onIntent)
+    NewConversationDialog(state = state, onIntent = onIntent)
 }
 
 @Composable
@@ -273,7 +275,6 @@ private val NavigationEntries = listOf(
     NavigationEntry(ChatDestination.Chat, "Conversa atual"),
     NavigationEntry(ChatDestination.SavedConversations, "Colecao de chats", "0"),
     NavigationEntry(ChatDestination.FileProfiles, "Fontes para RAG", "0"),
-    NavigationEntry(ChatDestination.History, "Linha do tempo"),
     NavigationEntry(ChatDestination.Settings, "Preferencias do app"),
 )
 
@@ -386,29 +387,39 @@ private fun ChatDestination.icon() = when (this) {
     ChatDestination.Chat -> Icons.Outlined.ChatBubbleOutline
     ChatDestination.SavedConversations -> Icons.Outlined.Bookmarks
     ChatDestination.FileProfiles -> Icons.Outlined.FolderOpen
-    ChatDestination.History -> Icons.Outlined.History
     ChatDestination.Settings -> Icons.Outlined.Settings
 }
 
-private fun ChatDestination.topBarTitle() = when (this) {
+private fun ChatState.topBarTitle(): String = when (selectedDestination) {
+    ChatDestination.Chat -> currentConversationTitle ?: "Conversa não salva"
+    ChatDestination.SavedConversations -> "Conversas salvas"
+    ChatDestination.FileProfiles -> "Arquivos adicionados"
+    ChatDestination.Settings -> "Ajustes"
+}
+
+private fun ChatDestination.sectionTitle() = when (this) {
     ChatDestination.Chat -> "Nova conversa"
     ChatDestination.SavedConversations -> "Conversas salvas"
     ChatDestination.FileProfiles -> "Arquivos adicionados"
-    ChatDestination.History -> "Historico"
     ChatDestination.Settings -> "Ajustes"
 }
 
 private fun ChatDestination.topBarSubtitle() = when (this) {
-    ChatDestination.Chat -> "Nenhuma fonte selecionada"
     ChatDestination.SavedConversations -> "Seus chats favoritos aparecerao aqui"
     ChatDestination.FileProfiles -> "Perfis de texto para o futuro RAG"
-    ChatDestination.History -> "Conversas recentes e retomadas"
     ChatDestination.Settings -> "Preferencias visuais e de modelo"
+    ChatDestination.Chat -> "Nenhuma fonte selecionada"
 }
 
-private fun ChatState.topBarSubtitle(): String = when (selectedDestination) {
+private fun ChatState.topBarStatus(): String? = when {
+    selectedDestination != ChatDestination.Chat -> selectedDestination.topBarSubtitle()
+    currentConversationTitle != null && !currentConversationSaved -> "Conversa não salva"
+    else -> null
+}
+
+private fun ChatState.topBarSource(): String? = when (selectedDestination) {
     ChatDestination.Chat -> selectedCollection?.name ?: "Nenhuma fonte selecionada"
-    else -> selectedDestination.topBarSubtitle()
+    else -> null
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -425,14 +436,37 @@ private fun ChatTopBar(
     CenterAlignedTopAppBar(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(selected.topBarTitle(), style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
-                    state.topBarSubtitle(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    state.topBarTitle(),
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                state.topBarStatus()?.let { status ->
+                    Text(
+                        status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (
+                            state.selectedDestination == ChatDestination.Chat &&
+                            (state.currentSavedConversationId == null || !state.currentConversationSaved)
+                        ) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                state.topBarSource()?.let { source ->
+                    Text(
+                        source,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         },
         navigationIcon = {
@@ -578,6 +612,110 @@ private fun SaveConversationDialog(state: ChatState, onIntent: (ChatIntent) -> U
 }
 
 @Composable
+private fun OpenSavedConversationDialog(state: ChatState, onIntent: (ChatIntent) -> Unit) {
+    if (!state.showOpenSavedConversationDialog) return
+
+    AlertDialog(
+        onDismissRequest = { onIntent(ChatIntent.DismissOpenSavedConversation) },
+        icon = { Icon(Icons.Outlined.WarningAmber, null) },
+        title = { Text("Abrir conversa salva?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("A conversa atual ainda nao foi salva e sera substituida pela conversa escolhida.")
+                Text(
+                    "Voce pode salvar a conversa atual antes de abrir a conversa salva.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                state.saveConversationMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onIntent(ChatIntent.SaveAndOpenSavedConversation) },
+                enabled = !state.isSavingConversation,
+            ) {
+                if (state.isSavingConversation) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Salvar e abrir")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = { onIntent(ChatIntent.ConfirmOpenSavedConversation) },
+                    enabled = !state.isSavingConversation,
+                ) {
+                    Text("Abrir sem salvar")
+                }
+                TextButton(
+                    onClick = { onIntent(ChatIntent.DismissOpenSavedConversation) },
+                    enabled = !state.isSavingConversation,
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun NewConversationDialog(state: ChatState, onIntent: (ChatIntent) -> Unit) {
+    if (!state.showNewConversationDialog) return
+
+    AlertDialog(
+        onDismissRequest = { onIntent(ChatIntent.DismissNewConversation) },
+        icon = { Icon(Icons.Outlined.AddComment, null) },
+        title = { Text("Iniciar nova conversa?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("A conversa atual ainda nao foi salva e sera removida da tela.")
+                Text(
+                    "Voce pode salva-la localmente antes de iniciar uma nova conversa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                state.saveConversationMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onIntent(ChatIntent.SaveAndNewConversation) },
+                enabled = !state.isSavingConversation,
+            ) {
+                if (state.isSavingConversation) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Salvar e iniciar")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = { onIntent(ChatIntent.ConfirmNewConversation) },
+                    enabled = !state.isSavingConversation,
+                ) {
+                    Text("Iniciar sem salvar")
+                }
+                TextButton(
+                    onClick = { onIntent(ChatIntent.DismissNewConversation) },
+                    enabled = !state.isSavingConversation,
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        },
+    )
+}
+
+@Composable
 private fun ChatContent(
     state: ChatState,
     onIntent: (ChatIntent) -> Unit,
@@ -697,6 +835,7 @@ private fun DestinationOverview(
                         title = conversation.title,
                         subtitle = conversation.collectionTitle ?: "Sem fonte vinculada",
                         messageCount = conversation.messageCount,
+                        onOpen = { onIntent(ChatIntent.OpenSavedConversation(conversation.id)) },
                         onDelete = { onIntent(ChatIntent.DeleteSavedConversation(conversation.id)) },
                         modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
                     )
@@ -751,11 +890,12 @@ private fun SavedConversationCard(
     title: String,
     subtitle: String,
     messageCount: Int,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier,
+        modifier = modifier.clip(RoundedCornerShape(22.dp)).clickable(onClick = onOpen),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
@@ -774,6 +914,7 @@ private fun SavedConversationCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             IconButton(onClick = onDelete) {
                 Icon(Icons.Outlined.Delete, "Excluir conversa salva")
             }
@@ -1030,7 +1171,7 @@ private fun SectionHero(destination: ChatDestination, expanded: Boolean) {
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(destination.topBarTitle(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(destination.sectionTitle(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text(
                     destination.topBarSubtitle(),
                     style = MaterialTheme.typography.bodyMedium,
@@ -1138,10 +1279,6 @@ private fun ChatDestination.overviewItems(): List<OverviewItem> = when (this) {
     ChatDestination.FileProfiles -> listOf(
         OverviewItem("Perfis de arquivos", "Textos adicionados pelo usuario poderao ser revisados antes de entrar no RAG.", "0 fontes", Icons.Outlined.Description),
         OverviewItem("Saude da base", "Espaco reservado para tamanho, data de importacao e status de indexacao.", "Planejado", Icons.Outlined.DataUsage),
-    )
-    ChatDestination.History -> listOf(
-        OverviewItem("Historico vazio", "As conversas recentes aparecerao aqui quando a persistencia for implementada.", "Local", Icons.Outlined.Schedule),
-        OverviewItem("Retomar contexto", "Area preparada para continuar conversas anteriores sem misturar fontes.", "Futuro", Icons.Outlined.Restore),
     )
     ChatDestination.Settings -> listOf(
         OverviewItem("Aparencia", "Tema, densidade e preferencias de leitura poderao morar nesta secao.", "Material 3", Icons.Outlined.Palette),

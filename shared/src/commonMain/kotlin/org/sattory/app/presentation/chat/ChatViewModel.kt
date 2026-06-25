@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import org.sattory.app.conversation.domain.ConversationMessageDraft
 import org.sattory.app.conversation.domain.DeleteSavedConversationUseCase
+import org.sattory.app.conversation.domain.GetSavedConversationUseCase
 import org.sattory.app.conversation.domain.ObserveSavedConversationsUseCase
 import org.sattory.app.conversation.domain.SaveConversationInput
 import org.sattory.app.conversation.domain.SaveConversationUseCase
@@ -46,6 +47,7 @@ class ChatViewModel(
     private val ragPromptBuilder: RagPromptBuilder,
     private val observeSavedConversationsUseCase: ObserveSavedConversationsUseCase,
     private val saveConversationUseCase: SaveConversationUseCase,
+    private val getSavedConversationUseCase: GetSavedConversationUseCase,
     private val deleteSavedConversationUseCase: DeleteSavedConversationUseCase,
 ) : ViewModel() {
     private val intents = Channel<ChatIntent>(Channel.UNLIMITED)
@@ -111,12 +113,18 @@ class ChatViewModel(
             is ChatIntent.SuggestionSelected -> _state.update { it.copy(input = intent.text) }
             is ChatIntent.EditMessage -> editMessage(intent.messageId)
             is ChatIntent.ToggleMessageActions -> toggleMessageActions(intent.messageId)
-            is ChatIntent.CollectionSelected -> _state.update { it.copy(selectedCollectionId = intent.collectionId) }
+            is ChatIntent.CollectionSelected -> _state.update {
+                it.copy(
+                    selectedCollectionId = intent.collectionId,
+                    currentConversationSaved = if (it.messages.isEmpty()) it.currentConversationSaved else false,
+                )
+            }
             is ChatIntent.CollectionTitleChanged -> _state.update { it.copy(collectionTitleInput = intent.value) }
             is ChatIntent.CollectionTextChanged -> _state.update { it.copy(collectionTextInput = intent.value) }
             is ChatIntent.EditCollection -> editCollection(intent.collectionId)
             is ChatIntent.DeleteCollection -> deleteCollection(intent.collectionId)
             is ChatIntent.DeleteSavedConversation -> deleteSavedConversation(intent.conversationId)
+            is ChatIntent.OpenSavedConversation -> openSavedConversation(intent.conversationId)
             ChatIntent.ToggleDesktopNavigation -> _state.update {
                 it.copy(desktopNavigationExpanded = !it.desktopNavigationExpanded)
             }
@@ -126,6 +134,16 @@ class ChatViewModel(
             ChatIntent.ConfirmSaveConversation -> saveCurrentConversation()
             ChatIntent.DismissSaveConversation -> _state.update {
                 it.copy(showSaveConversationDialog = false, saveConversationMessage = null)
+            }
+            ChatIntent.ConfirmOpenSavedConversation -> openPendingSavedConversation(saveCurrentFirst = false)
+            ChatIntent.SaveAndOpenSavedConversation -> openPendingSavedConversation(saveCurrentFirst = true)
+            ChatIntent.DismissOpenSavedConversation -> _state.update {
+                it.copy(showOpenSavedConversationDialog = false, pendingSavedConversationId = null)
+            }
+            ChatIntent.ConfirmNewConversation -> viewModelScope.launch { clearCurrentConversation() }
+            ChatIntent.SaveAndNewConversation -> saveCurrentConversation(newAfterSave = true)
+            ChatIntent.DismissNewConversation -> _state.update {
+                it.copy(showNewConversationDialog = false, saveConversationMessage = null)
             }
             ChatIntent.CreateCollection -> createCollection()
             ChatIntent.SaveCollection -> saveCollection()
@@ -171,6 +189,7 @@ class ChatViewModel(
                 isAwaitingFirstToken = true,
                 editingMessageId = null,
                 selectedMessageId = null,
+                currentConversationSaved = false,
             )
         }
 
@@ -178,6 +197,7 @@ class ChatViewModel(
             val responseId = nextId()
             val response = StringBuilder()
             var responseStarted = false
+            var shouldAutosave = false
             try {
                 val sources = retrieveContextUseCase(currentState.selectedCollectionId, prompt)
                 _state.update { it.copy(activeSources = sources) }
@@ -205,6 +225,7 @@ class ChatViewModel(
                         it.copy(messages = it.messages + ChatMessage(responseId, "O modelo não produziu resposta.", false))
                     }
                 }
+                shouldAutosave = true
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -224,6 +245,9 @@ class ChatViewModel(
                 }
             } finally {
                 _state.update { it.copy(isGenerating = false, isAwaitingFirstToken = false) }
+                if (shouldAutosave) {
+                    autosaveCurrentConversation()
+                }
             }
         }
     }
@@ -248,10 +272,22 @@ class ChatViewModel(
     }
 
     private suspend fun newConversation() {
+        val current = state.first()
+        if (current.messages.isNotEmpty() && !current.currentConversationSaved) {
+            _state.update {
+                it.copy(showNewConversationDialog = true, saveConversationMessage = null)
+            }
+            return
+        }
+        clearCurrentConversation()
+    }
+
+    private suspend fun clearCurrentConversation() {
         val previousJob = generationJob
+        generationJob = null
         _state.update {
             ChatState(
-                selectedDestination = it.selectedDestination,
+                selectedDestination = ChatDestination.Chat,
                 themeMode = it.themeMode,
                 desktopNavigationExpanded = it.desktopNavigationExpanded,
                 modelStatus = it.modelStatus,
@@ -260,12 +296,14 @@ class ChatViewModel(
                 selectedCollectionId = it.selectedCollectionId,
                 editingCollectionId = it.editingCollectionId,
                 savedConversations = it.savedConversations,
+                showNewConversationDialog = false,
+                currentSavedConversationId = null,
+                currentConversationTitle = null,
+                currentConversationSaved = false,
             )
         }
-        generationJob = viewModelScope.launch {
-            previousJob?.cancelAndJoin()
-            localLlm.resetConversation()
-        }
+        previousJob?.cancelAndJoin()
+        localLlm.resetConversation()
     }
 
     private var id = 0L
@@ -378,15 +416,17 @@ class ChatViewModel(
         }
     }
 
-    private fun saveCurrentConversation() {
+    private fun saveCurrentConversation(openAfterSave: Boolean = false, newAfterSave: Boolean = false) {
         val current = state.value
         if (current.messages.isEmpty() || current.isSavingConversation) return
+        val title = current.conversationTitle()
         viewModelScope.launch {
             try {
                 _state.update { it.copy(isSavingConversation = true) }
-                saveConversationUseCase(
+                val savedConversationId = saveConversationUseCase(
                     SaveConversationInput(
-                        title = current.conversationTitle(),
+                        conversationId = current.currentSavedConversationId,
+                        title = title,
                         collectionId = current.selectedCollectionId,
                         collectionTitle = current.selectedCollection?.name,
                         messages = current.messages.map {
@@ -394,12 +434,22 @@ class ChatViewModel(
                         },
                     ),
                 )
+                val pendingId = state.value.pendingSavedConversationId
                 _state.update {
                     it.copy(
                         showSaveConversationDialog = false,
+                        showNewConversationDialog = false,
                         isSavingConversation = false,
+                        currentSavedConversationId = savedConversationId,
+                        currentConversationTitle = title,
+                        currentConversationSaved = true,
                         saveConversationMessage = "Conversa salva localmente",
                     )
+                }
+                if (openAfterSave && pendingId != null) {
+                    loadSavedConversation(pendingId)
+                } else if (newAfterSave) {
+                    clearCurrentConversation()
                 }
             } catch (error: Throwable) {
                 _state.update {
@@ -412,9 +462,114 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun autosaveCurrentConversation() {
+        val current = state.value
+        val conversationId = current.currentSavedConversationId ?: return
+        if (current.messages.isEmpty()) return
+        val title = current.currentConversationTitle ?: current.conversationTitle()
+        try {
+            val savedConversationId = saveConversationUseCase(
+                SaveConversationInput(
+                    conversationId = conversationId,
+                    title = title,
+                    collectionId = current.selectedCollectionId,
+                    collectionTitle = current.selectedCollection?.name,
+                    messages = current.messages.map {
+                        ConversationMessageDraft(text = it.text, isFromUser = it.isFromUser)
+                    },
+                ),
+            )
+            _state.update {
+                it.copy(
+                    currentSavedConversationId = savedConversationId,
+                    currentConversationTitle = title,
+                    currentConversationSaved = true,
+                    saveConversationMessage = null,
+                )
+            }
+        } catch (error: Throwable) {
+            _state.update {
+                it.copy(
+                    currentConversationSaved = false,
+                    saveConversationMessage = error.message ?: "Nao foi possivel atualizar a conversa salva",
+                )
+            }
+        }
+    }
+
     private fun deleteSavedConversation(conversationId: Long) {
         viewModelScope.launch {
             deleteSavedConversationUseCase(conversationId)
+            _state.update {
+                if (it.currentSavedConversationId == conversationId) {
+                    it.copy(
+                        currentSavedConversationId = null,
+                        currentConversationTitle = null,
+                        currentConversationSaved = false,
+                    )
+                } else {
+                    it
+                }
+            }
+        }
+    }
+
+    private fun openSavedConversation(conversationId: Long) {
+        val current = state.value
+        if (current.messages.isNotEmpty() && !current.currentConversationSaved) {
+            _state.update {
+                it.copy(
+                    pendingSavedConversationId = conversationId,
+                    showOpenSavedConversationDialog = true,
+                    saveConversationMessage = null,
+                )
+            }
+        } else {
+            viewModelScope.launch {
+                loadSavedConversation(conversationId)
+            }
+        }
+    }
+
+    private fun openPendingSavedConversation(saveCurrentFirst: Boolean) {
+        val pendingId = state.value.pendingSavedConversationId ?: return
+        if (saveCurrentFirst) {
+            saveCurrentConversation(openAfterSave = true)
+        } else {
+            viewModelScope.launch {
+                loadSavedConversation(pendingId)
+            }
+        }
+    }
+
+    private suspend fun loadSavedConversation(conversationId: Long) {
+        val saved = getSavedConversationUseCase(conversationId) ?: return
+        generationJob?.cancelAndJoin()
+        generationJob = null
+        localLlm.resetConversation()
+        _state.update {
+            it.copy(
+                selectedDestination = ChatDestination.Chat,
+                messages = saved.messages.map { message ->
+                    ChatMessage(id = nextId(), text = message.text, isFromUser = message.isFromUser)
+                },
+                input = "",
+                isGenerating = false,
+                isAwaitingFirstToken = false,
+                editingMessageId = null,
+                selectedMessageId = null,
+                activeSources = emptyList(),
+                selectedCollectionId = saved.collectionId?.takeIf { collectionId ->
+                    it.collections.any { collection -> collection.id == collectionId }
+                },
+                showOpenSavedConversationDialog = false,
+                showNewConversationDialog = false,
+                pendingSavedConversationId = null,
+                currentSavedConversationId = saved.id,
+                currentConversationTitle = saved.title,
+                currentConversationSaved = true,
+                saveConversationMessage = null,
+            )
         }
     }
 
