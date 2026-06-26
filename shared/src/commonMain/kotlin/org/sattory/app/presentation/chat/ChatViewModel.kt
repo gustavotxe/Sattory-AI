@@ -202,8 +202,9 @@ class ChatViewModel(
                 val sources = retrieveContextUseCase(currentState.selectedCollectionId, prompt)
                 _state.update { it.copy(activeSources = sources) }
                 val generationPrompt = ragPromptBuilder.build(prompt, sources)
+                val generationOptions = ragPromptBuilder.optionsFor(sources)
                 editingIndex?.let { localLlm.truncateConversation(it) }
-                localLlm.generate(generationPrompt).collect { token ->
+                localLlm.generate(generationPrompt, generationOptions).collect { token ->
                     response.append(token)
                     val message = ChatMessage(responseId, response.toString(), isFromUser = false)
                     if (responseStarted) {

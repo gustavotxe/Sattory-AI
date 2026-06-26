@@ -15,18 +15,24 @@ class DesktopLocalLlm(
 ) : LocalLlm {
     @Volatile
     private var loaded = false
+
     private val inferenceDispatcher = Dispatchers.Default.limitedParallelism(1)
 
     init {
         val library = File(nativeLibraryPath)
-        require(library.isFile) { "Biblioteca nativa não encontrada em ${library.absolutePath}" }
+        require(library.isFile) { "Biblioteca nativa nao encontrada em ${library.absolutePath}" }
         System.load(library.absolutePath)
     }
 
     override fun generate(prompt: String, options: GenerationOptions): Flow<String> = flow {
         ensureLoaded()
         NativeLlmBridge.nativeBeginGeneration(
-            prompt.encodeToByteArray(), options.maxTokens, options.contextSize, options.temperature,
+            prompt.encodeToByteArray(),
+            options.maxTokens,
+            options.contextSize,
+            options.temperature,
+            options.topP,
+            options.repeatPenalty,
         )
         var completed = false
         try {
@@ -43,7 +49,7 @@ class DesktopLocalLlm(
 
     private fun ensureLoaded() {
         if (loaded) return
-        require(File(modelPath).isFile) { "Modelo não encontrado em $modelPath" }
+        require(File(modelPath).isFile) { "Modelo nao encontrado em $modelPath" }
         NativeLlmBridge.nativeLoad(modelPath)
         loaded = true
     }
@@ -65,7 +71,14 @@ class DesktopLocalLlm(
 
 internal object NativeLlmBridge {
     external fun nativeLoad(modelPath: String)
-    external fun nativeBeginGeneration(prompt: ByteArray, maxTokens: Int, contextSize: Int, temperature: Float)
+    external fun nativeBeginGeneration(
+        prompt: ByteArray,
+        maxTokens: Int,
+        contextSize: Int,
+        temperature: Float,
+        topP: Float,
+        repeatPenalty: Float,
+    )
     external fun nativeNextToken(): ByteArray?
     external fun nativeCancelGeneration()
     external fun nativeResetConversation()

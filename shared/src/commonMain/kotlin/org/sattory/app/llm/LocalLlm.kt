@@ -6,8 +6,18 @@ import kotlinx.coroutines.flow.flow
 data class GenerationOptions(
     val maxTokens: Int = 512,
     val contextSize: Int = 4096,
-    val temperature: Float = 0.7f,
-)
+    val temperature: Float = 0.55f,
+    val topP: Float = 0.9f,
+    val repeatPenalty: Float = 1.05f,
+) {
+    companion object {
+        val GroundedAnswering = GenerationOptions(
+            temperature = 0.35f,
+            topP = 0.9f,
+            repeatPenalty = 1.04f,
+        )
+    }
+}
 
 interface LocalLlm {
     fun generate(prompt: String, options: GenerationOptions = GenerationOptions()): Flow<String>

@@ -1,7 +1,7 @@
 package org.sattory.app.presentation.chat
 
-import org.sattory.app.model.ModelStatus
 import org.sattory.app.conversation.domain.SavedConversationSummary
+import org.sattory.app.model.ModelStatus
 import org.sattory.app.rag.domain.DocumentCollection
 import org.sattory.app.rag.domain.RagIndexState
 import org.sattory.app.rag.domain.RagSource

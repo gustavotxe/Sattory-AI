@@ -69,4 +69,5 @@ class AndroidEmbeddingModelRepository(context: Context) : ModelRepository {
         EmbeddingModelDownloadWorker.STAGE_READY -> ModelDownloadProgress(ModelDownloadStage.Ready)
         else -> ModelDownloadProgress(ModelDownloadStage.Unknown)
     }
+
 }

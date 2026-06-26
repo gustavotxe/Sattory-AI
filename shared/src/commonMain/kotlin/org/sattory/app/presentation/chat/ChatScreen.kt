@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
+import org.sattory.app.model.ModelArtifactSpec
 import org.sattory.app.model.ModelStatus
 import org.sattory.app.rag.domain.RagIndexState
 import org.sattory.app.rag.domain.RagSource
@@ -260,8 +261,10 @@ private fun NavigationContent(
             )
         }
         Spacer(Modifier.weight(1f))
-        NavigationQuickStats()
-        ModelStatusCard(modelStatus, onRetryModel)
+        ModelStatusCard(
+            status = modelStatus,
+            onRetry = onRetryModel,
+        )
     }
 }
 
@@ -354,31 +357,6 @@ private fun CompactDesktopNavigation(
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onToggleExpanded) {
             Icon(Icons.Outlined.KeyboardDoubleArrowRight, "Expandir menu")
-        }
-    }
-}
-
-@Composable
-private fun NavigationQuickStats() {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        CompactMetric("0", "salvas", Modifier.weight(1f))
-        CompactMetric("0", "arquivos", Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun CompactMetric(value: String, label: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(16.dp),
-    ) {
-        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1455,20 +1433,39 @@ private fun Composer(
 }
 
 @Composable
-private fun ModelStatusCard(status: ModelStatus, onRetry: () -> Unit) {
+private fun ModelStatusCard(
+    status: ModelStatus,
+    onRetry: () -> Unit,
+) {
     Surface(
+        modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
         shape = RoundedCornerShape(16.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(Icons.Outlined.Memory, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Modelo local", style = MaterialTheme.typography.labelLarge)
-                    Text(status.label(), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        ModelArtifactSpec.SHORT_NAME,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
+            Text(
+                "${ModelArtifactSpec.APPROXIMATE_SIZE} - ${status.compactLabel()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             if (status is ModelStatus.Downloading) {
                 status.progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) }
                     ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -1504,6 +1501,15 @@ private fun ModelStatus.label(): String = when (this) {
     ModelStatus.Verifying -> "Validando segurança do arquivo…"
     ModelStatus.Ready -> "Pronto para uso"
     is ModelStatus.Failed -> message
+}
+
+private fun ModelStatus.compactLabel(): String = when (this) {
+    ModelStatus.Checking -> "Verificando"
+    ModelStatus.Queued -> "Aguardando"
+    is ModelStatus.Downloading -> progress?.let { "Baixando ${(it * 100).toInt()}%" } ?: "Baixando"
+    ModelStatus.Verifying -> "Validando"
+    ModelStatus.Ready -> "Pronto para uso"
+    is ModelStatus.Failed -> "Falhou"
 }
 
 @Composable

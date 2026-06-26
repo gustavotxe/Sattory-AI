@@ -1,6 +1,9 @@
 package org.sattory.app.model
 
 object ModelArtifactSpec {
+    const val DISPLAY_NAME = "Qwen3 1.7B Q4_K_M"
+    const val SHORT_NAME = "Qwen3 1.7B"
+    const val APPROXIMATE_SIZE = "1.2 GB"
     const val FILE_NAME = "qwen3-1.7b-q4_k_m.gguf"
     const val DOWNLOAD_URL =
         "https://huggingface.co/enacimie/Qwen3-1.7B-Q4_K_M-GGUF/resolve/main/qwen3-1.7b-q4_k_m.gguf"

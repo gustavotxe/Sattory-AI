@@ -3,9 +3,9 @@ package org.sattory.app.model
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.system.Os
-import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.Data
@@ -40,7 +40,7 @@ class ModelDownloadWorker(
             partial.delete()
 
             setProgress(stageData(STAGE_VERIFYING))
-            if (target.isFile && Sha256.of(target) == ModelFileSpec.SHA256) {
+            if (target.isFile && Sha256.of(target) == ModelArtifactSpec.SHA256) {
                 return@withContext Result.success(stageData(STAGE_READY))
             }
             target.delete()
@@ -62,7 +62,7 @@ class ModelDownloadWorker(
     }
 
     private suspend fun downloadAndVerify(partial: File) {
-        val connection = (URL(ModelFileSpec.DOWNLOAD_URL).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(ModelArtifactSpec.DOWNLOAD_URL).openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
@@ -110,8 +110,8 @@ class ModelDownloadWorker(
             reportProgress(downloaded, total)
             setProgress(stageData(STAGE_VERIFYING))
             val actualHash = Sha256.toHex(digest.digest())
-            if (actualHash != ModelFileSpec.SHA256) {
-                throw IOException("SHA-256 inválido; o download será descartado")
+            if (actualHash != ModelArtifactSpec.SHA256) {
+                throw IOException("SHA-256 invalido; o download sera descartado")
             }
         } finally {
             connection.disconnect()
@@ -133,7 +133,7 @@ class ModelDownloadWorker(
         try {
             Os.rename(source.absolutePath, target.absolutePath)
         } catch (error: Exception) {
-            throw IOException("Não foi possível finalizar o arquivo do modelo", error)
+            throw IOException("Nao foi possivel finalizar o arquivo do modelo", error)
         }
     }
 
@@ -148,7 +148,7 @@ class ModelDownloadWorker(
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("Preparando modelo local")
-            .setContentText(progress?.let { "Download: $it%" } ?: "Baixando modelo…")
+            .setContentText(progress?.let { "Download: $it%" } ?: "Baixando modelo...")
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setProgress(100, progress ?: 0, progress == null)
@@ -164,7 +164,7 @@ class ModelDownloadWorker(
     private fun stageData(stage: String): Data = workDataOf(KEY_STAGE to stage)
 
     companion object {
-        const val UNIQUE_WORK_NAME = "download-qwen3-model"
+        const val UNIQUE_WORK_NAME = "download-local-model"
         const val KEY_STAGE = "stage"
         const val KEY_DOWNLOADED_BYTES = "downloaded_bytes"
         const val KEY_TOTAL_BYTES = "total_bytes"

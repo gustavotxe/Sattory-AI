@@ -1,8 +1,8 @@
 package org.sattory.app.rag.data
 
 class RagTextChunker(
-    private val maxChunkChars: Int = 1_200,
-    private val overlapChars: Int = 180,
+    private val maxChunkChars: Int = 900,
+    private val overlapChars: Int = 240,
 ) {
     fun chunk(text: String): List<String> {
         val normalized = text.lineSequence()
@@ -27,8 +27,12 @@ class RagTextChunker(
 
     private fun findNaturalBreak(text: String, start: Int, hardEnd: Int): Int {
         if (hardEnd == text.length) return hardEnd
-        val windowStart = (hardEnd - 240).coerceAtLeast(start)
-        val breakIndex = text.lastIndexOfAny(charArrayOf('\n', '.', '!', '?', ';'), hardEnd - 1)
+        val windowStart = (hardEnd - NATURAL_BREAK_WINDOW_CHARS).coerceAtLeast(start)
+        val breakIndex = text.lastIndexOfAny(charArrayOf('\n', '.', '!', '?', ';', ':'), hardEnd - 1)
         return if (breakIndex >= windowStart) breakIndex + 1 else hardEnd
+    }
+
+    private companion object {
+        const val NATURAL_BREAK_WINDOW_CHARS = 260
     }
 }

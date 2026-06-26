@@ -80,12 +80,15 @@ interface RagDao {
         """
         SELECT
             ch.id AS chunkId,
+            ch.documentId AS documentId,
+            ch.chunkIndex AS chunkIndex,
             d.title AS documentTitle,
             ch.text AS text,
             ch.embedding AS embedding
         FROM rag_chunks ch
         INNER JOIN rag_documents d ON d.id = ch.documentId
         WHERE ch.collectionId = :collectionId
+        ORDER BY ch.documentId ASC, ch.chunkIndex ASC
         """,
     )
     suspend fun chunksForCollection(collectionId: Long): List<RagChunkWithDocumentEntity>

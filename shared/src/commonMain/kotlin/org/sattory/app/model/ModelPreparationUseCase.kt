@@ -13,8 +13,7 @@ class ModelPreparationUseCase(
             modelRepository.observeDownloadState().collect { downloadState ->
                 emit(downloadState.toModelStatus())
             }
-        }
-            .distinctUntilChanged()
+        }.distinctUntilChanged()
 
     fun ensureModel() {
         modelRepository.requestDownload(ModelDownloadRequestPolicy.Keep)

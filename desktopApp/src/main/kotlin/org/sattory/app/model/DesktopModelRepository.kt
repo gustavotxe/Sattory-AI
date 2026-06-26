@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -32,18 +33,13 @@ class DesktopModelRepository(
 
     override fun requestDownload(policy: ModelDownloadRequestPolicy) {
         if (policy == ModelDownloadRequestPolicy.Keep && downloadJob?.isActive == true) return
-
-        if (policy == ModelDownloadRequestPolicy.Replace) {
-            downloadJob?.cancel()
-        }
-
-        downloadJob = scope.launch {
-            prepareModel()
-        }
+        if (policy == ModelDownloadRequestPolicy.Replace) downloadJob?.cancel()
+        downloadJob = scope.launch { prepareModel() }
     }
 
     override suspend fun isModelAvailable(): Boolean = withContext(Dispatchers.IO) {
-        files.modelFile.isFile && DesktopSha256.of(files.modelFile) == ModelArtifactSpec.SHA256
+        val file = files.modelFile
+        file.isFile && DesktopSha256.of(file) == ModelArtifactSpec.SHA256
     }
 
     private suspend fun prepareModel() = withContext(Dispatchers.IO) {
@@ -60,7 +56,7 @@ class DesktopModelRepository(
             files.partialModelFile.delete()
 
             downloadAndVerify()
-            moveIntoPlace()
+            moveIntoPlace(files.partialModelFile, files.modelFile)
             downloadState.value = ModelDownloadState.Succeeded
         } catch (error: Throwable) {
             files.partialModelFile.delete()
@@ -68,26 +64,15 @@ class DesktopModelRepository(
                 downloadState.value = ModelDownloadState.Cancelled
                 throw error
             }
-            downloadState.value = ModelDownloadState.Failed(
-                error.message ?: "Nao foi possivel preparar o modelo local",
-            )
+            downloadState.value = ModelDownloadState.Failed(error.message ?: "Nao foi possivel preparar o modelo local")
         }
     }
 
-    private fun moveIntoPlace() {
+    private fun moveIntoPlace(source: File, target: File) {
         try {
-            Files.move(
-                files.partialModelFile.toPath(),
-                files.modelFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE,
-            )
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (_: IOException) {
-            Files.move(
-                files.partialModelFile.toPath(),
-                files.modelFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-            )
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 
@@ -102,9 +87,7 @@ class DesktopModelRepository(
 
         try {
             connection.connect()
-            if (connection.responseCode !in 200..299) {
-                throw IOException("Servidor respondeu HTTP ${connection.responseCode}")
-            }
+            if (connection.responseCode !in 200..299) throw IOException("Servidor respondeu HTTP ${connection.responseCode}")
 
             val total = connection.contentLengthLong.takeIf { it > 0 }
             val digest = MessageDigest.getInstance("SHA-256")
@@ -125,10 +108,7 @@ class DesktopModelRepository(
                             downloaded += count
 
                             val now = System.currentTimeMillis()
-                            if (
-                                downloaded - lastReportedBytes >= PROGRESS_STEP_BYTES &&
-                                now - lastReportedAt >= PROGRESS_INTERVAL_MS
-                            ) {
+                            if (downloaded - lastReportedBytes >= PROGRESS_STEP_BYTES && now - lastReportedAt >= PROGRESS_INTERVAL_MS) {
                                 reportProgress(downloaded, total)
                                 lastReportedBytes = downloaded
                                 lastReportedAt = now
@@ -143,9 +123,7 @@ class DesktopModelRepository(
             reportProgress(downloaded, total)
             downloadState.value = ModelDownloadState.Running(ModelDownloadProgress(ModelDownloadStage.Verifying))
             val actualHash = DesktopSha256.toHex(digest.digest())
-            if (actualHash != ModelArtifactSpec.SHA256) {
-                throw IOException("SHA-256 invalido; o download sera descartado")
-            }
+            if (actualHash != ModelArtifactSpec.SHA256) throw IOException("SHA-256 invalido; o download sera descartado")
         } finally {
             connection.disconnect()
         }
@@ -153,11 +131,7 @@ class DesktopModelRepository(
 
     private fun reportProgress(downloaded: Long, total: Long?) {
         downloadState.value = ModelDownloadState.Running(
-            ModelDownloadProgress(
-                stage = ModelDownloadStage.Downloading,
-                downloadedBytes = downloaded,
-                totalBytes = total,
-            ),
+            ModelDownloadProgress(ModelDownloadStage.Downloading, downloaded, total),
         )
     }
 

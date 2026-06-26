@@ -347,7 +347,14 @@ void finish_generation() {
     free_generation();
 }
 
-void begin_generation(const std::string & user_prompt, int max_tokens, int requested_context_size, float temperature) {
+void begin_generation(
+    const std::string & user_prompt,
+    int max_tokens,
+    int requested_context_size,
+    float temperature,
+    float top_p,
+    float repeat_penalty
+) {
     if (model == nullptr) throw std::runtime_error("O modelo ainda não foi carregado");
     if (generation_active) throw std::runtime_error("Já existe uma geração em andamento");
     if (user_prompt.empty()) throw std::runtime_error("O prompt está vazio");
@@ -359,6 +366,8 @@ void begin_generation(const std::string & user_prompt, int max_tokens, int reque
         decode(prompt_tokens);
 
         sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
+        llama_sampler_chain_add(sampler, llama_sampler_init_penalties(96, std::max(repeat_penalty, 1.0f), 0.0f, 0.0f));
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(std::clamp(top_p, 0.05f, 1.0f), 1));
         llama_sampler_chain_add(sampler, llama_sampler_init_temp(std::max(temperature, 0.01f)));
         llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
         max_generation_tokens = std::max(max_tokens, 1);
@@ -434,11 +443,25 @@ Java_org_sattory_app_llm_NativeLlmBridge_nativeLoad(JNIEnv * env, jobject, jstri
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_sattory_app_llm_NativeLlmBridge_nativeBeginGeneration(
-    JNIEnv * env, jobject, jbyteArray prompt, jint max_tokens, jint requested_context_size, jfloat temperature
+    JNIEnv * env,
+    jobject,
+    jbyteArray prompt,
+    jint max_tokens,
+    jint requested_context_size,
+    jfloat temperature,
+    jfloat top_p,
+    jfloat repeat_penalty
 ) {
     std::lock_guard<std::mutex> lock(engine_mutex);
     try {
-        begin_generation(from_utf8_bytes(env, prompt), max_tokens, requested_context_size, temperature);
+        begin_generation(
+            from_utf8_bytes(env, prompt),
+            max_tokens,
+            requested_context_size,
+            temperature,
+            top_p,
+            repeat_penalty
+        );
     } catch (const std::exception & error) {
         throw_java(env, error.what());
     }

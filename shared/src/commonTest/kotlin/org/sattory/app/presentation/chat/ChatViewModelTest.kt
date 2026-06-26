@@ -23,9 +23,12 @@ import org.sattory.app.model.ReadyModelRepository
 import org.sattory.app.rag.data.UnavailableRagRepository
 import org.sattory.app.rag.domain.CreateCollectionUseCase
 import org.sattory.app.rag.domain.DeleteCollectionUseCase
+import org.sattory.app.rag.domain.DocumentCollection
 import org.sattory.app.rag.domain.GetCollectionDraftUseCase
 import org.sattory.app.rag.domain.ObserveCollectionsUseCase
 import org.sattory.app.rag.domain.RagPromptBuilder
+import org.sattory.app.rag.domain.RagRepository
+import org.sattory.app.rag.domain.RagSource
 import org.sattory.app.rag.domain.RetrieveContextUseCase
 import org.sattory.app.rag.domain.UpdateCollectionUseCase
 import kotlin.test.AfterTest
@@ -35,6 +38,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.assertNull
+import kotlin.test.assertContains
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelTest {
@@ -97,8 +101,52 @@ class ChatViewModelTest {
         assertEquals(emptyList(), currentState.messages)
     }
 
-    private fun createViewModel(llm: LocalLlm): ChatViewModel {
-        val ragRepository = UnavailableRagRepository()
+    @Test
+    fun usesGroundedGenerationOptionsWhenRagSourcesAreAvailable() = runTest(dispatcher) {
+        val llm = FakeLocalLlm()
+        val source = RagSource(
+            documentTitle = "Inventario",
+            text = "A caixa azul fica ao lado da caixa verde. A etiqueta da caixa azul informa prioridade alta.",
+            score = 0.82f,
+        )
+        val viewModel = createViewModel(llm, FixedRagRepository(listOf(source)))
+        advanceUntilIdle()
+
+        viewModel.onIntent(ChatIntent.CollectionSelected(1L))
+        viewModel.onIntent(ChatIntent.InputChanged("Qual e a prioridade da caixa verde?"))
+        viewModel.onIntent(ChatIntent.SendMessage)
+        advanceUntilIdle()
+
+        assertEquals(GenerationOptions.GroundedAnswering, llm.options.single())
+        assertContains(llm.prompts.single(), "claramente apoiada")
+        assertContains(llm.prompts.single(), "O material enviado nao informa isso.")
+        assertContains(llm.prompts.single(), "Nao atribua")
+        assertEquals(listOf(source), viewModel.state.first().activeSources)
+    }
+
+    @Test
+    fun ragPromptKeepsEntityBoundariesExplicit() {
+        val prompt = RagPromptBuilder().build(
+            userPrompt = "Qual e a prioridade da caixa verde?",
+            sources = listOf(
+                RagSource(
+                    documentTitle = "Inventario",
+                    text = "A caixa azul fica ao lado da caixa verde. A etiqueta da caixa azul informa prioridade alta.",
+                    score = 0.82f,
+                ),
+            ),
+        )
+
+        assertContains(prompt, "confirme que o sujeito e a propriedade estejam ligados")
+        assertContains(prompt, "combinar frases proximas")
+        assertContains(prompt, "Nao atribua")
+        assertContains(prompt, "O material enviado nao informa isso.")
+    }
+
+    private fun createViewModel(
+        llm: LocalLlm,
+        ragRepository: RagRepository = UnavailableRagRepository(),
+    ): ChatViewModel {
         val conversationRepository = UnavailableSavedConversationRepository()
         return ChatViewModel(
             localLlm = llm,
@@ -121,9 +169,14 @@ class ChatViewModelTest {
     private class FakeLocalLlm : LocalLlm {
         var resetCount = 0
         val truncatedAt = mutableListOf<Int>()
+        val prompts = mutableListOf<String>()
+        val options = mutableListOf<GenerationOptions>()
 
-        override fun generate(prompt: String, options: GenerationOptions): Flow<String> =
-            flowOf("Resposta", " em", " streaming")
+        override fun generate(prompt: String, options: GenerationOptions): Flow<String> {
+            prompts += prompt
+            this.options += options
+            return flowOf("Resposta", " em", " streaming")
+        }
 
         override suspend fun resetConversation() {
             resetCount++
@@ -134,5 +187,33 @@ class ChatViewModelTest {
         }
 
         override fun close() = Unit
+    }
+
+    private class FixedRagRepository(private val sources: List<RagSource>) : RagRepository {
+        override fun observeCollections(): Flow<List<DocumentCollection>> = flowOf(
+            listOf(
+                DocumentCollection(
+                    id = 1L,
+                    name = "Teste",
+                    description = "",
+                    documentCount = 1,
+                    chunkCount = sources.size,
+                    createdAtMillis = 0L,
+                    updatedAtMillis = 0L,
+                ),
+            ),
+        )
+
+        override suspend fun createCollection(input: org.sattory.app.rag.domain.CreateCollectionInput): Long = 1L
+        override suspend fun collectionDraft(collectionId: Long): org.sattory.app.rag.domain.CollectionDraft? = null
+        override suspend fun updateCollection(
+            collectionId: Long,
+            input: org.sattory.app.rag.domain.CreateCollectionInput,
+        ) = Unit
+
+        override suspend fun deleteCollection(collectionId: Long) = Unit
+
+        override suspend fun retrieve(collectionId: Long, query: String, limit: Int): List<RagSource> =
+            sources.take(limit)
     }
 }

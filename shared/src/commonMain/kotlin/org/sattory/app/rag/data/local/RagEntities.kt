@@ -76,6 +76,8 @@ data class DocumentCollectionStatsEntity(
 
 data class RagChunkWithDocumentEntity(
     val chunkId: Long,
+    val documentId: Long,
+    val chunkIndex: Int,
     val documentTitle: String,
     val text: String,
     val embedding: ByteArray,
