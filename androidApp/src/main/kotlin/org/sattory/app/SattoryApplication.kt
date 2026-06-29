@@ -4,7 +4,6 @@ import android.app.Application
 import org.koin.core.module.Module
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
-import org.sattory.app.EMBEDDING_MODEL_REPOSITORY
 import org.sattory.app.llm.AndroidLocalLlm
 import org.sattory.app.llm.LocalLlm
 import org.sattory.app.conversation.data.RoomSavedConversationRepository

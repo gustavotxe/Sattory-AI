@@ -53,7 +53,7 @@ enum class ThemeMode(val label: String) {
 
 enum class ChatDestination(val label: String) {
     Chat("Conversa"),
-    SavedConversations("Conversas salvas"),
+    SavedConversations("Conversas Salvas"),
     FileProfiles("Arquivos"),
     Settings("Ajustes"),
 }

@@ -46,6 +46,15 @@ compose.desktop {
                 shortcut = true
                 menu = true
                 menuGroup = "Sattory"
+                iconFile.set(project.file("src/main/resources/icons/sattory.ico"))
+            }
+
+            macOS {
+                iconFile.set(project.file("src/main/resources/icons/sattory.icns"))
+            }
+
+            linux {
+                iconFile.set(project.file("src/main/resources/icons/sattory-icon-512.png"))
             }
 
         }

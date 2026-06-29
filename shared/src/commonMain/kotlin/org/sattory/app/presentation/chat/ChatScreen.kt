@@ -9,6 +9,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,31 +19,37 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
 import org.sattory.app.model.ModelArtifactSpec
 import org.sattory.app.model.ModelStatus
 import org.sattory.app.rag.domain.RagIndexState
 import org.sattory.app.rag.domain.RagSource
 import org.sattory.app.ui.theme.SattoryTheme
+import sattoryapp.shared.generated.resources.Res
+import sattoryapp.shared.generated.resources.sattory_app_icon
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = koinViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     SattoryTheme(darkTheme = state.themeMode == ThemeMode.Dark) {
-        BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        ) {
             if (maxWidth >= 800.dp) {
                 Row(Modifier.fillMaxSize()) {
                     DesktopNavigation(
@@ -179,6 +186,7 @@ private fun DesktopNavigation(
                 selected = selected,
                 modelStatus = modelStatus,
                 showDesktopToggle = true,
+                desktopStyle = true,
                 onSelect = onSelect,
                 onNewChat = onNewChat,
                 onRetryModel = onRetryModel,
@@ -202,63 +210,65 @@ private fun NavigationContent(
     selected: ChatDestination,
     modelStatus: ModelStatus,
     showDesktopToggle: Boolean = false,
+    desktopStyle: Boolean = false,
     onSelect: (ChatDestination) -> Unit,
     onNewChat: () -> Unit,
     onRetryModel: () -> Unit,
     onToggleExpanded: () -> Unit = {},
     modifier: Modifier,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        NavigationHeader(showDesktopToggle, onToggleExpanded)
-        FilledTonalButton(
-            onClick = onNewChat,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(18.dp),
-        ) {
-            Icon(Icons.Outlined.AddComment, null)
-            Spacer(Modifier.width(10.dp))
-            Text("Nova conversa", style = MaterialTheme.typography.labelLarge)
+    Column(
+        modifier,
+        verticalArrangement = Arrangement.spacedBy(if (desktopStyle) 10.dp else 8.dp)
+    ) {
+        NavigationHeader(showDesktopToggle, onToggleExpanded, desktopStyle)
+        WorkspaceSectionLabel(desktopStyle)
+        if (desktopStyle) {
+            DesktopNavigationAction(onNewChat)
+        } else {
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Outlined.AddComment, null) },
+                label = { Text("Nova conversa") },
+                selected = false,
+                onClick = onNewChat,
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Espaco de trabalho",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-        )
         NavigationEntries.forEach { item ->
             val isSelected = selected == item.destination
-            val itemHeight by animateDpAsState(if (isSelected) 64.dp else 58.dp)
-            NavigationDrawerItem(
-                icon = { Icon(item.destination.icon(), null) },
-                label = {
-                    Column {
-                        Text(item.destination.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            item.supportingText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                },
-                badge = item.badge?.let { badge ->
-                    {
-                        Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer) {
-                            Text(badge, style = MaterialTheme.typography.labelSmall)
+            if (desktopStyle) {
+                DesktopNavigationItem(
+                    item = item,
+                    selected = isSelected,
+                    onClick = { onSelect(item.destination) },
+                )
+            } else {
+                val itemHeight by animateDpAsState(if (isSelected) 64.dp else 58.dp)
+                NavigationDrawerItem(
+                    icon = { Icon(item.destination.icon(), null) },
+                    label = {
+                        Column {
+                            Text(item.destination.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                item.supportingText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
-                    }
-                },
-                selected = isSelected,
-                onClick = { onSelect(item.destination) },
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth().height(itemHeight),
-                colors = NavigationDrawerItemDefaults.colors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    unselectedContainerColor = MaterialTheme.colorScheme.surface,
-                ),
-            )
+                    },
+                    selected = isSelected,
+                    onClick = { onSelect(item.destination) },
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth().height(itemHeight),
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        unselectedContainerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                )
+            }
         }
         Spacer(Modifier.weight(1f))
         ModelStatusCard(
@@ -268,48 +278,203 @@ private fun NavigationContent(
     }
 }
 
-private data class NavigationEntry(
-    val destination: ChatDestination,
-    val supportingText: String,
-    val badge: String? = null,
-)
-
-private val NavigationEntries = listOf(
-    NavigationEntry(ChatDestination.Chat, "Conversa atual"),
-    NavigationEntry(ChatDestination.SavedConversations, "Colecao de chats", "0"),
-    NavigationEntry(ChatDestination.FileProfiles, "Fontes para RAG", "0"),
-    NavigationEntry(ChatDestination.Settings, "Preferencias do app"),
-)
+@Composable
+private fun WorkspaceSectionLabel(desktopStyle: Boolean) {
+    Text(
+        "Espaço de trabalho:",
+        style = if (desktopStyle) {
+            MaterialTheme.typography.labelSmall
+        } else {
+            MaterialTheme.typography.labelMedium
+        },
+        fontWeight = if (desktopStyle) FontWeight.Bold else FontWeight.Normal,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = if (desktopStyle) 2.dp else 4.dp),
+    )
+}
 
 @Composable
-private fun NavigationHeader(showDesktopToggle: Boolean, onToggleExpanded: () -> Unit) {
+private fun DesktopNavigationAction(onClick: () -> Unit) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 2.dp,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            Modifier.fillMaxSize().padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BrandMark()
+            Surface(
+                color = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.AddComment,
+                    null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(8.dp).size(18.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "Nova conversa",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DesktopNavigationItem(
+    item: NavigationEntry,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val containerColor by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    )
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick),
+        color = containerColor,
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = if (selected) 2.dp else 0.dp,
+    ) {
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                },
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(
+                    item.destination.icon(),
+                    null,
+                    tint = if (selected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(8.dp).size(18.dp),
+                )
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Sattory", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "IA local para estudos",
+                    item.destination.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    item.supportingText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (showDesktopToggle) {
+            if (selected) {
+                Surface(
+                    modifier = Modifier.size(width = 4.dp, height = 28.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(50),
+                ) {}
+            }
+        }
+    }
+}
+
+private data class NavigationEntry(
+    val destination: ChatDestination,
+    val supportingText: String,
+)
+
+private val NavigationEntries = listOf(
+    NavigationEntry(ChatDestination.Chat, "Conversa atual"),
+    NavigationEntry(ChatDestination.SavedConversations, "Coleção de chats"),
+    NavigationEntry(ChatDestination.FileProfiles, "Fontes para consulta"),
+    NavigationEntry(ChatDestination.Settings, "Preferencias do app"),
+)
+
+@Composable
+private fun NavigationHeader(
+    showDesktopToggle: Boolean,
+    onToggleExpanded: () -> Unit,
+    desktopStyle: Boolean = false,
+) {
+    val content: @Composable RowScope.() -> Unit = {
+        BrandMark(size = if (desktopStyle) 46 else 38)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Sattory",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "IA Local",
+                style = if (desktopStyle) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodySmall,
+                fontWeight = if (desktopStyle) FontWeight.Medium else FontWeight.Normal,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (showDesktopToggle) {
+            if (desktopStyle) {
+                IconButton(onClick = onToggleExpanded, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Outlined.KeyboardDoubleArrowLeft, "Recolher menu")
+                }
+            } else {
                 IconButton(onClick = onToggleExpanded) {
                     Icon(Icons.Outlined.KeyboardDoubleArrowLeft, "Recolher menu")
                 }
             }
         }
+    }
+    if (desktopStyle) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 1.dp,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
     }
 }
 
@@ -334,12 +499,14 @@ private fun CompactDesktopNavigation(
         NavigationEntries.forEach { item ->
             val isSelected = selected == item.destination
             val containerColor by animateColorAsState(
-                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
             )
             Surface(
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).clickable { onSelect(item.destination) },
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(18.dp))
+                    .clickable { onSelect(item.destination) },
                 color = containerColor,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
+                tonalElevation = if (isSelected) 2.dp else 0.dp,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -370,22 +537,22 @@ private fun ChatDestination.icon() = when (this) {
 
 private fun ChatState.topBarTitle(): String = when (selectedDestination) {
     ChatDestination.Chat -> currentConversationTitle ?: "Conversa não salva"
-    ChatDestination.SavedConversations -> "Conversas salvas"
-    ChatDestination.FileProfiles -> "Arquivos adicionados"
+    ChatDestination.SavedConversations -> "Conversas Salvas"
+    ChatDestination.FileProfiles -> "Arquivos Adicionados"
     ChatDestination.Settings -> "Ajustes"
 }
 
 private fun ChatDestination.sectionTitle() = when (this) {
     ChatDestination.Chat -> "Nova conversa"
-    ChatDestination.SavedConversations -> "Conversas salvas"
-    ChatDestination.FileProfiles -> "Arquivos adicionados"
+    ChatDestination.SavedConversations -> "Conversas Salvas"
+    ChatDestination.FileProfiles -> "Arquivos Adicionados"
     ChatDestination.Settings -> "Ajustes"
 }
 
 private fun ChatDestination.topBarSubtitle() = when (this) {
     ChatDestination.SavedConversations -> "Seus chats favoritos aparecerao aqui"
-    ChatDestination.FileProfiles -> "Perfis de texto para o futuro RAG"
-    ChatDestination.Settings -> "Preferencias visuais e de modelo"
+    ChatDestination.FileProfiles -> "Perfis de texto para consultas"
+    ChatDestination.Settings -> "Preferências visuais do sistema"
     ChatDestination.Chat -> "Nenhuma fonte selecionada"
 }
 
@@ -448,15 +615,20 @@ private fun ChatTopBar(
             }
         },
         navigationIcon = {
-            if (compact) IconButton(onClick = onMenuClick) { Icon(Icons.Outlined.Menu, "Abrir menu") }
+            if (compact) IconButton(onClick = onMenuClick) {
+                Icon(
+                    Icons.Outlined.Menu,
+                    "Abrir menu"
+                )
+            }
         },
         actions = {
             IconButton(
                 onClick = onRequestSave,
                 enabled = state.selectedDestination == ChatDestination.Chat &&
-                    state.messages.isNotEmpty() &&
-                    !state.isGenerating &&
-                    !state.isSavingConversation,
+                        state.messages.isNotEmpty() &&
+                        !state.isGenerating &&
+                        !state.isSavingConversation,
             ) {
                 Icon(Icons.Outlined.BookmarkAdd, "Salvar conversa")
             }
@@ -467,7 +639,7 @@ private fun ChatTopBar(
                 ) {
                     Icon(
                         if (state.selectedCollectionId == null) Icons.Outlined.Source else Icons.Outlined.FolderOpen,
-                        "Selecionar colecao",
+                        "Selecionar coleção",
                     )
                 }
                 DropdownMenu(
@@ -503,7 +675,11 @@ private fun ChatTopBar(
                         DropdownMenuItem(
                             text = {
                                 Column {
-                                    Text(collection.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        collection.name,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                     Text(
                                         "${collection.chunkCount} chunk(s)",
                                         style = MaterialTheme.typography.bodySmall,
@@ -551,7 +727,9 @@ private fun SaveConversationDialog(state: ChatState, onIntent: (ChatIntent) -> U
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("A conversa atual sera salva localmente neste dispositivo.")
                 state.selectedCollection?.let {
-                    AssistChip(onClick = {}, label = { Text(it.name, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(it.name, maxLines = 1, overflow = TextOverflow.Ellipsis) })
                 }
                 state.saveConversationMessage?.let {
                     Text(
@@ -606,7 +784,11 @@ private fun OpenSavedConversationDialog(state: ChatState, onIntent: (ChatIntent)
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 state.saveConversationMessage?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         },
@@ -658,7 +840,11 @@ private fun NewConversationDialog(state: ChatState, onIntent: (ChatIntent) -> Un
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 state.saveConversationMessage?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         },
@@ -734,7 +920,10 @@ private fun ChatContent(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = if (expanded) 48.dp else 16.dp, vertical = 20.dp),
+                    contentPadding = PaddingValues(
+                        horizontal = if (expanded) 48.dp else 16.dp,
+                        vertical = 20.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
                     items(state.messages, key = { it.id }) { message ->
@@ -757,7 +946,10 @@ private fun ChatContent(
                     if (state.isAwaitingFirstToken) item { ThinkingIndicator() }
                     if (state.activeSources.isNotEmpty()) {
                         item {
-                            SourceStrip(state.activeSources, Modifier.fillMaxWidth().widthIn(max = 840.dp))
+                            SourceStrip(
+                                state.activeSources,
+                                Modifier.fillMaxWidth().widthIn(max = 840.dp)
+                            )
                         }
                     }
                 }
@@ -846,13 +1038,20 @@ private fun EmptySavedConversationsCard(modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.BookmarkBorder, null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(14.dp))
             Column {
-                Text("Nenhuma conversa salva", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Text(
+                    "Nenhuma conversa salva",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
                 Text(
                     "Use o icone de salvar na conversa para guardar um chat localmente.",
                     style = MaterialTheme.typography.bodySmall,
@@ -877,13 +1076,22 @@ private fun SavedConversationCard(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Bookmark, null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     "$subtitle • $messageCount mensagem(ns)",
                     style = MaterialTheme.typography.bodySmall,
@@ -892,7 +1100,11 @@ private fun SavedConversationCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(
+                Icons.Outlined.ChevronRight,
+                null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             IconButton(onClick = onDelete) {
                 Icon(Icons.Outlined.Delete, "Excluir conversa salva")
             }
@@ -954,14 +1166,21 @@ private fun RagStatusPanel(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Hub, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("RAG local", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        "RAG local",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
                     Text(
                         "Embeddings multilingual-e5-small para PT e EN.",
                         style = MaterialTheme.typography.bodySmall,
@@ -971,16 +1190,28 @@ private fun RagStatusPanel(
             }
             Text("Modelo: ${embeddingStatus.label()}", style = MaterialTheme.typography.bodySmall)
             if (embeddingStatus is ModelStatus.Downloading) {
-                embeddingStatus.progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) }
+                embeddingStatus.progress?.let {
+                    LinearProgressIndicator(
+                        progress = { it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                     ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             when (indexState) {
                 RagIndexState.Indexing -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                is RagIndexState.Failed -> Text(indexState.message, color = MaterialTheme.colorScheme.error)
+                is RagIndexState.Failed -> Text(
+                    indexState.message,
+                    color = MaterialTheme.colorScheme.error
+                )
+
                 else -> Unit
             }
             if (embeddingStatus is ModelStatus.Failed) {
-                TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) { Text("Tentar novamente") }
+                TextButton(
+                    onClick = onRetry,
+                    modifier = Modifier.align(Alignment.End)
+                ) { Text("Tentar novamente") }
             }
         }
     }
@@ -997,24 +1228,36 @@ private fun CollectionSelectorPanel(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.FolderCopy, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Colecao ativa", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        "Colecao ativa",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
                     Text(
                         state.selectedCollection?.name ?: "Nenhuma fonte selecionada",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                AssistChip(onClick = { onIntent(ChatIntent.CollectionSelected(null)) }, label = { Text("Limpar") })
+                AssistChip(
+                    onClick = { onIntent(ChatIntent.CollectionSelected(null)) },
+                    label = { Text("Limpar") })
             }
             if (state.collections.isEmpty()) {
-                Text("Crie uma colecao com texto colado para usar RAG na conversa.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Crie uma colecao com texto colado para usar RAG na conversa.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
                 state.collections.forEach { collection ->
                     val selected = state.selectedCollectionId == collection.id
@@ -1024,7 +1267,10 @@ private fun CollectionSelectorPanel(
                         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                         shape = RoundedCornerShape(16.dp),
                     ) {
-                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Icon(
                                 if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.Description,
                                 null,
@@ -1032,7 +1278,12 @@ private fun CollectionSelectorPanel(
                             )
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(collection.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    collection.name,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 Text(
                                     "${collection.documentCount} texto(s), ${collection.chunkCount} chunk(s)",
                                     style = MaterialTheme.typography.bodySmall,
@@ -1061,16 +1312,19 @@ private fun CreateCollectionPanel(
 ) {
     val editing = state.editingCollectionId != null
     val canSubmit = state.collectionTitleInput.isNotBlank() &&
-        state.collectionTextInput.trim().length >= 40 &&
-        state.ragIndexState != RagIndexState.Indexing &&
-        state.embeddingModelStatus is ModelStatus.Ready
+            state.collectionTextInput.trim().length >= 40 &&
+            state.ragIndexState != RagIndexState.Indexing &&
+            state.embeddingModelStatus is ModelStatus.Ready
 
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1100,7 +1354,11 @@ private fun CreateCollectionPanel(
                 label = { Text("Texto colado") },
                 minLines = 8,
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (state.ragIndexState == RagIndexState.Indexing) {
                     CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
@@ -1109,7 +1367,11 @@ private fun CreateCollectionPanel(
                     onClick = { onIntent(if (editing) ChatIntent.SaveCollection else ChatIntent.CreateCollection) },
                     enabled = canSubmit,
                 ) {
-                    Icon(if (editing) Icons.Outlined.Save else Icons.Outlined.Add, null, Modifier.size(18.dp))
+                    Icon(
+                        if (editing) Icons.Outlined.Save else Icons.Outlined.Add,
+                        null,
+                        Modifier.size(18.dp)
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(if (editing) "Salvar colecao" else "Criar colecao")
                 }
@@ -1121,11 +1383,7 @@ private fun CreateCollectionPanel(
 @Composable
 private fun SectionHero(destination: ChatDestination, expanded: Boolean) {
     val container by animateColorAsState(
-        if (destination == ChatDestination.FileProfiles) {
-            MaterialTheme.colorScheme.tertiaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        }
+        MaterialTheme.colorScheme.surfaceContainerHigh
     )
     Surface(
         modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
@@ -1149,7 +1407,11 @@ private fun SectionHero(destination: ChatDestination, expanded: Boolean) {
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(destination.sectionTitle(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    destination.sectionTitle(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
                 Text(
                     destination.topBarSubtitle(),
                     style = MaterialTheme.typography.bodyMedium,
@@ -1167,14 +1429,25 @@ private fun OverviewCard(item: OverviewItem, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(item.icon, null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    item.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             AssistChip(onClick = {}, label = { Text(item.tag) })
         }
@@ -1194,14 +1467,21 @@ private fun SettingsPanel(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant
+        ),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Contrast, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Tema do aplicativo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        "Tema do aplicativo",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
                     Text(
                         "O app inicia em modo claro por padrao.",
                         style = MaterialTheme.typography.bodySmall,
@@ -1228,7 +1508,11 @@ private fun SettingsPanel(
                 Icon(Icons.Outlined.WidthNormal, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Menu desktop expandido", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        "Menu desktop expandido",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
                     Text(
                         if (desktopNavigationExpanded) "A sidebar mostra textos, status e atalhos." else "A sidebar compacta libera mais espaco para o chat.",
                         style = MaterialTheme.typography.bodySmall,
@@ -1255,13 +1539,21 @@ private fun ChatDestination.overviewItems(): List<OverviewItem> = when (this) {
     ChatDestination.Chat -> emptyList()
     ChatDestination.SavedConversations -> emptyList()
     ChatDestination.FileProfiles -> listOf(
-        OverviewItem("Perfis de arquivos", "Textos adicionados pelo usuario poderao ser revisados antes de entrar no RAG.", "0 fontes", Icons.Outlined.Description),
-        OverviewItem("Saude da base", "Espaco reservado para tamanho, data de importacao e status de indexacao.", "Planejado", Icons.Outlined.DataUsage),
+        OverviewItem(
+            "Perfis de arquivos",
+            "Textos adicionados pelo usuario poderao ser revisados antes de entrar no RAG.",
+            "0 fontes",
+            Icons.Outlined.Description
+        ),
+        OverviewItem(
+            "Saude da base",
+            "Espaco reservado para tamanho, data de importacao e status de indexacao.",
+            "Planejado",
+            Icons.Outlined.DataUsage
+        ),
     )
-    ChatDestination.Settings -> listOf(
-        OverviewItem("Aparencia", "Tema, densidade e preferencias de leitura poderao morar nesta secao.", "Material 3", Icons.Outlined.Palette),
-        OverviewItem("Modelo local", "Parametros do modelo e armazenamento ficarao agrupados com clareza.", "Privado", Icons.Outlined.Memory),
-    )
+
+    ChatDestination.Settings -> emptyList()
 }
 
 @Composable
@@ -1272,16 +1564,18 @@ private fun WelcomeContent(modifier: Modifier, expanded: Boolean, selectedCollec
     ) {
         Spacer(Modifier.height(20.dp))
         Text(
-            "Como posso ajudar nos seus estudos?",
+            "Como posso ajudar?",
             style = if (expanded) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(8.dp))
         Text(
             selectedCollectionName?.let { "Fonte ativa: $it" }
                 ?: "Converse com seus documentos com privacidade e inteligencia local.",
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -1295,7 +1589,12 @@ private fun SourceStrip(sources: List<RagSource>, modifier: Modifier = Modifier)
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.ManageSearch, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.Outlined.ManageSearch,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
                 Spacer(Modifier.width(8.dp))
                 Text("Fontes usadas", style = MaterialTheme.typography.labelLarge)
             }
@@ -1344,10 +1643,17 @@ private fun MessageBubble(
                 shape = bubbleShape,
                 tonalElevation = if (message.isFromUser) 0.dp else 1.dp,
             ) {
-                Text(message.text, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    message.text,
+                    Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyLarge
+                )
             }
             if (actionsVisible) onEdit?.let {
-                TextButton(onClick = it, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                TextButton(
+                    onClick = it,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
                     Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Editar")
@@ -1390,7 +1696,11 @@ private fun Composer(
                 ) {
                     Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Editando mensagem", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                    Text(
+                        "Editando mensagem",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.weight(1f)
+                    )
                     TextButton(onClick = onCancelEditing) { Text("Cancelar") }
                 }
             }
@@ -1398,7 +1708,10 @@ private fun Composer(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant
+                ),
                 shadowElevation = 2.dp,
             ) {
                 Row(Modifier.padding(8.dp), verticalAlignment = Alignment.Bottom) {
@@ -1423,7 +1736,10 @@ private fun Composer(
                             unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                         ),
                     )
-                    FilledIconButton(onClick = onSend, enabled = value.isNotBlank() && !generating && modelReady) {
+                    FilledIconButton(
+                        onClick = onSend,
+                        enabled = value.isNotBlank() && !generating && modelReady
+                    ) {
                         Icon(Icons.Rounded.ArrowUpward, "Enviar")
                     }
                 }
@@ -1442,7 +1758,10 @@ private fun ModelStatusCard(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
         shape = RoundedCornerShape(16.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1467,11 +1786,19 @@ private fun ModelStatusCard(
                 overflow = TextOverflow.Ellipsis,
             )
             if (status is ModelStatus.Downloading) {
-                status.progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) }
+                status.progress?.let {
+                    LinearProgressIndicator(
+                        progress = { it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                     ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             if (status is ModelStatus.Failed) {
-                TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) { Text("Tentar novamente") }
+                TextButton(
+                    onClick = onRetry,
+                    modifier = Modifier.align(Alignment.End)
+                ) { Text("Tentar novamente") }
             }
         }
     }
@@ -1479,7 +1806,10 @@ private fun ModelStatusCard(
 
 @Composable
 private fun ModelStatusBanner(status: ModelStatus, onRetry: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1488,7 +1818,11 @@ private fun ModelStatusBanner(status: ModelStatus, onRetry: () -> Unit) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
             }
-            Text(status.label(), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            Text(
+                status.label(),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
             if (status is ModelStatus.Failed) TextButton(onClick = onRetry) { Text("Tentar novamente") }
         }
     }
@@ -1497,7 +1831,9 @@ private fun ModelStatusBanner(status: ModelStatus, onRetry: () -> Unit) {
 private fun ModelStatus.label(): String = when (this) {
     ModelStatus.Checking -> "Verificando arquivo…"
     ModelStatus.Queued -> "Download aguardando conexão…"
-    is ModelStatus.Downloading -> progress?.let { "Baixando ${(it * 100).toInt()}%" } ?: "Baixando modelo…"
+    is ModelStatus.Downloading -> progress?.let { "Baixando ${(it * 100).toInt()}%" }
+        ?: "Baixando modelo…"
+
     ModelStatus.Verifying -> "Validando segurança do arquivo…"
     ModelStatus.Ready -> "Pronto para uso"
     is ModelStatus.Failed -> message
@@ -1514,16 +1850,10 @@ private fun ModelStatus.compactLabel(): String = when (this) {
 
 @Composable
 private fun BrandMark(size: Int = 38) {
-    Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape((size * .32f).dp))
-            .background(MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Rounded.AutoAwesome,
-            null,
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size((size * .55f).dp),
-        )
-    }
+    Image(
+        painter = painterResource(Res.drawable.sattory_app_icon),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.size(size.dp).clip(RoundedCornerShape((size * .28f).dp)),
+    )
 }

@@ -1,5 +1,6 @@
 package org.sattory.app
 
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.flow.toList
@@ -48,6 +49,7 @@ fun main(args: Array<String>) {
     application {
         Window(
             onCloseRequest = ::exitApplication,
+            icon = painterResource("icons/sattory-icon-256.png"),
             title = "Sattory",
         ) {
             App(platformModule)
