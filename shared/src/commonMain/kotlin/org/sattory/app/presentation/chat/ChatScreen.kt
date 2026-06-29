@@ -25,7 +25,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -917,41 +925,58 @@ private fun ChatContent(
                     selectedCollectionName = state.selectedCollection?.name,
                 )
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        horizontal = if (expanded) 48.dp else 16.dp,
-                        vertical = 20.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    items(state.messages, key = { it.id }) { message ->
-                        MessageBubble(
-                            message = message,
-                            expanded = expanded,
-                            actionsVisible = state.selectedMessageId == message.id,
-                            onToggleActions = if (message.isFromUser && !state.isGenerating) {
-                                { onIntent(ChatIntent.ToggleMessageActions(message.id)) }
-                            } else {
-                                null
-                            },
-                            onEdit = if (message.isFromUser && !state.isGenerating) {
-                                { onIntent(ChatIntent.EditMessage(message.id)) }
-                            } else {
-                                null
-                            },
-                        )
-                    }
-                    if (state.isAwaitingFirstToken) item { ThinkingIndicator() }
-                    if (state.activeSources.isNotEmpty()) {
-                        item {
-                            SourceStrip(
-                                state.activeSources,
-                                Modifier.fillMaxWidth().widthIn(max = 840.dp)
+                Box(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .desktopConversationScrollInput(enabled = expanded, listState = listState),
+                        contentPadding = PaddingValues(
+                            horizontal = if (expanded) 48.dp else 16.dp,
+                            vertical = 20.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        items(state.messages, key = { it.id }) { message ->
+                            MessageBubble(
+                                message = message,
+                                expanded = expanded,
+                                actionsVisible = state.selectedMessageId == message.id,
+                                onToggleActions = if (!state.isGenerating) {
+                                    { onIntent(ChatIntent.ToggleMessageActions(message.id)) }
+                                } else {
+                                    null
+                                },
+                                onEdit = if (message.isFromUser && !state.isGenerating) {
+                                    { onIntent(ChatIntent.EditMessage(message.id)) }
+                                } else {
+                                    null
+                                },
                             )
                         }
+                        if (state.isAwaitingFirstToken) item { ThinkingIndicator() }
+                        if (state.canContinueLastResponse) {
+                            item {
+                                ContinueResponseButton(
+                                    onClick = { onIntent(ChatIntent.ContinueLastResponse) },
+                                    modifier = Modifier.fillMaxWidth().widthIn(max = 840.dp),
+                                )
+                            }
+                        }
+                        if (state.activeSources.isNotEmpty()) {
+                            item {
+                                SourceStrip(
+                                    state.activeSources,
+                                    Modifier.fillMaxWidth().widthIn(max = 840.dp)
+                                )
+                            }
+                        }
                     }
+                    DesktopConversationScrollbar(
+                        enabled = expanded,
+                        listState = listState,
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                    )
                 }
             }
         }
@@ -969,6 +994,7 @@ private fun ChatContent(
                 onSend = { onIntent(ChatIntent.SendMessage) },
                 onCancelEditing = { onIntent(ChatIntent.CancelEditing) },
                 expanded = expanded,
+                submitOnEnter = expanded,
             )
         }
     }
@@ -1619,6 +1645,7 @@ private fun MessageBubble(
     onToggleActions: (() -> Unit)?,
     onEdit: (() -> Unit)?,
 ) {
+    val clipboardManager = LocalClipboardManager.current
     val bubbleShape = if (message.isFromUser) {
         RoundedCornerShape(20.dp, 5.dp, 20.dp, 20.dp)
     } else {
@@ -1649,16 +1676,51 @@ private fun MessageBubble(
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
-            if (actionsVisible) onEdit?.let {
-                TextButton(
-                    onClick = it,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            if (actionsVisible) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Editar")
+                    TextButton(
+                        onClick = { clipboardManager.setText(AnnotatedString(message.text)) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Outlined.ContentCopy, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Copiar")
+                    }
+                    onEdit?.let {
+                        TextButton(
+                            onClick = it,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Editar")
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ContinueResponseButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        FilledTonalButton(
+            onClick = onClick,
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+        ) {
+            Icon(Icons.Outlined.PlayArrow, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Continue")
         }
     }
 }
@@ -1682,6 +1744,7 @@ private fun Composer(
     onSend: () -> Unit,
     onCancelEditing: () -> Unit,
     expanded: Boolean,
+    submitOnEnter: Boolean,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
@@ -1718,7 +1781,19 @@ private fun Composer(
                     TextField(
                         value = value,
                         onValueChange = onValueChange,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
+                            if (
+                                submitOnEnter &&
+                                event.type == KeyEventType.KeyDown &&
+                                event.key == Key.Enter &&
+                                !event.isShiftPressed
+                            ) {
+                                onSend()
+                                true
+                            } else {
+                                false
+                            }
+                        },
                         enabled = modelReady && !generating,
                         placeholder = {
                             Text(

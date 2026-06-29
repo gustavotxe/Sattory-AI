@@ -130,6 +130,7 @@ class ChatViewModel(
             }
             ChatIntent.NewConversation -> newConversation()
             ChatIntent.SendMessage -> sendMessage()
+            ChatIntent.ContinueLastResponse -> continueLastResponse()
             ChatIntent.RequestSaveConversation -> requestSaveConversation()
             ChatIntent.ConfirmSaveConversation -> saveCurrentConversation()
             ChatIntent.DismissSaveConversation -> _state.update {
@@ -162,21 +163,25 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun sendMessage() {
+    private suspend fun sendMessage(
+        promptOverride: String? = null,
+        retrieveSources: Boolean = true,
+    ) {
         val currentState = state.first()
-        val prompt = currentState.input.trim()
+        val prompt = promptOverride ?: currentState.input.trim()
         if (
             prompt.isEmpty() || currentState.isGenerating || generationJob?.isActive == true ||
             currentState.modelStatus !is ModelStatus.Ready
         ) return
 
-        val editingIndex = currentState.editingMessageId?.let { id ->
+        val editingMessageId = if (promptOverride == null) currentState.editingMessageId else null
+        val editingIndex = editingMessageId?.let { id ->
             currentState.messages.indexOfFirst { it.id == id && it.isFromUser }.takeIf { it >= 0 }
         }
-        if (currentState.editingMessageId != null && editingIndex == null) return
+        if (editingMessageId != null && editingIndex == null) return
 
         val userMessage = ChatMessage(
-            id = currentState.editingMessageId ?: nextId(),
+            id = editingMessageId ?: nextId(),
             text = prompt,
             isFromUser = true,
         )
@@ -190,6 +195,7 @@ class ChatViewModel(
                 editingMessageId = null,
                 selectedMessageId = null,
                 currentConversationSaved = false,
+                canContinueLastResponse = false,
             )
         }
 
@@ -197,11 +203,16 @@ class ChatViewModel(
             val responseId = nextId()
             val response = StringBuilder()
             var responseStarted = false
+            var completedNormally = false
             var shouldAutosave = false
             try {
-                val sources = retrieveContextUseCase(currentState.selectedCollectionId, prompt)
-                _state.update { it.copy(activeSources = sources) }
-                val generationPrompt = ragPromptBuilder.build(prompt, sources)
+                val sources = if (retrieveSources) {
+                    retrieveContextUseCase(currentState.selectedCollectionId, prompt)
+                } else {
+                    emptyList()
+                }
+                if (retrieveSources) _state.update { it.copy(activeSources = sources) }
+                val generationPrompt = if (retrieveSources) ragPromptBuilder.build(prompt, sources) else prompt
                 val generationOptions = ragPromptBuilder.optionsFor(sources)
                 editingIndex?.let { localLlm.truncateConversation(it) }
                 localLlm.generate(generationPrompt, generationOptions).collect { token ->
@@ -226,6 +237,7 @@ class ChatViewModel(
                         it.copy(messages = it.messages + ChatMessage(responseId, "O modelo não produziu resposta.", false))
                     }
                 }
+                completedNormally = true
                 shouldAutosave = true
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -245,12 +257,27 @@ class ChatViewModel(
                     )
                 }
             } finally {
-                _state.update { it.copy(isGenerating = false, isAwaitingFirstToken = false) }
+                val stoppedByTokenLimit = completedNormally &&
+                    responseStarted &&
+                    runCatching { localLlm.wasLastGenerationTokenLimited() }.getOrDefault(false)
+                _state.update {
+                    it.copy(
+                        isGenerating = false,
+                        isAwaitingFirstToken = false,
+                        canContinueLastResponse = stoppedByTokenLimit,
+                    )
+                }
                 if (shouldAutosave) {
                     autosaveCurrentConversation()
                 }
             }
         }
+    }
+
+    private suspend fun continueLastResponse() {
+        val currentState = state.first()
+        if (!currentState.canContinueLastResponse || currentState.isGenerating) return
+        sendMessage(promptOverride = ContinuationPrompt, retrieveSources = false)
     }
 
     private suspend fun editMessage(messageId: Long) {
@@ -265,8 +292,8 @@ class ChatViewModel(
     private suspend fun toggleMessageActions(messageId: Long) {
         val currentState = state.first()
         if (currentState.isGenerating) return
-        val isUserMessage = currentState.messages.any { it.id == messageId && it.isFromUser }
-        if (!isUserMessage) return
+        val hasMessage = currentState.messages.any { it.id == messageId }
+        if (!hasMessage) return
         _state.update {
             it.copy(selectedMessageId = if (it.selectedMessageId == messageId) null else messageId)
         }
@@ -582,4 +609,8 @@ class ChatViewModel(
             ?.take(64)
             ?.ifBlank { null }
             ?: "Conversa local"
+
+    private companion object {
+        const val ContinuationPrompt = "continue"
+    }
 }

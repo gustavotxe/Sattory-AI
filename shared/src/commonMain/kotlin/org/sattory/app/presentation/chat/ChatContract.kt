@@ -41,6 +41,7 @@ data class ChatState(
     val currentConversationTitle: String? = null,
     val currentConversationSaved: Boolean = false,
     val saveConversationMessage: String? = null,
+    val canContinueLastResponse: Boolean = false,
 ) {
     val selectedCollection: DocumentCollection?
         get() = selectedCollectionId?.let { id -> collections.firstOrNull { it.id == id } }
@@ -74,6 +75,7 @@ sealed interface ChatIntent {
     data class OpenSavedConversation(val conversationId: Long) : ChatIntent
     data object ToggleDesktopNavigation : ChatIntent
     data object SendMessage : ChatIntent
+    data object ContinueLastResponse : ChatIntent
     data object RequestSaveConversation : ChatIntent
     data object ConfirmSaveConversation : ChatIntent
     data object DismissSaveConversation : ChatIntent

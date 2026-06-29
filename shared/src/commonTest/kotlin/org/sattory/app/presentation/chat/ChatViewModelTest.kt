@@ -3,6 +3,7 @@ package org.sattory.app.presentation.chat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -125,6 +126,42 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun offersContinueWhenGenerationReachesTokenBudget() = runTest(dispatcher) {
+        val llm = FakeLocalLlm(tokenLimited = true) { options ->
+            flow {
+                repeat(options.maxTokens) { emit("x") }
+            }
+        }
+        val viewModel = createViewModel(llm)
+        advanceUntilIdle()
+
+        viewModel.onIntent(ChatIntent.InputChanged("Escreva um texto longo"))
+        viewModel.onIntent(ChatIntent.SendMessage)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.state.first().canContinueLastResponse)
+
+        viewModel.onIntent(ChatIntent.ContinueLastResponse)
+        advanceUntilIdle()
+
+        assertEquals("continue", llm.prompts.last())
+        assertEquals("continue", viewModel.state.first().messages.dropLast(1).last().text)
+    }
+
+    @Test
+    fun doesNotOfferContinueWhenGenerationStopsBeforeTokenBudget() = runTest(dispatcher) {
+        val llm = FakeLocalLlm()
+        val viewModel = createViewModel(llm)
+        advanceUntilIdle()
+
+        viewModel.onIntent(ChatIntent.InputChanged("Ola"))
+        viewModel.onIntent(ChatIntent.SendMessage)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.first().canContinueLastResponse)
+    }
+
+    @Test
     fun ragPromptKeepsEntityBoundariesExplicit() {
         val prompt = RagPromptBuilder().build(
             userPrompt = "Qual e a prioridade da caixa verde?",
@@ -166,7 +203,12 @@ class ChatViewModelTest {
         )
     }
 
-    private class FakeLocalLlm : LocalLlm {
+    private class FakeLocalLlm(
+        private val tokenLimited: Boolean = false,
+        private val responseFactory: (GenerationOptions) -> Flow<String> = {
+            flowOf("Resposta", " em", " streaming")
+        },
+    ) : LocalLlm {
         var resetCount = 0
         val truncatedAt = mutableListOf<Int>()
         val prompts = mutableListOf<String>()
@@ -175,8 +217,10 @@ class ChatViewModelTest {
         override fun generate(prompt: String, options: GenerationOptions): Flow<String> {
             prompts += prompt
             this.options += options
-            return flowOf("Resposta", " em", " streaming")
+            return responseFactory(options)
         }
+
+        override suspend fun wasLastGenerationTokenLimited(): Boolean = tokenLimited
 
         override suspend fun resetConversation() {
             resetCount++

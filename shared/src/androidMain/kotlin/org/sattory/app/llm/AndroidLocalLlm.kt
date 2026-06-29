@@ -49,6 +49,10 @@ class AndroidLocalLlm(private val modelPath: String) : LocalLlm {
         if (loaded) NativeLlmBridge.nativeResetConversation()
     }
 
+    override suspend fun wasLastGenerationTokenLimited(): Boolean = withContext(inferenceDispatcher) {
+        loaded && NativeLlmBridge.nativeWasLastGenerationTokenLimited()
+    }
+
     override suspend fun truncateConversation(messageCount: Int) = withContext(inferenceDispatcher) {
         require(messageCount >= 0)
         if (loaded) NativeLlmBridge.nativeTruncateConversation(messageCount)
@@ -74,6 +78,7 @@ internal object NativeLlmBridge {
     )
     external fun nativeNextToken(): ByteArray?
     external fun nativeCancelGeneration()
+    external fun nativeWasLastGenerationTokenLimited(): Boolean
     external fun nativeResetConversation()
     external fun nativeTruncateConversation(messageCount: Int)
     external fun nativeClose()

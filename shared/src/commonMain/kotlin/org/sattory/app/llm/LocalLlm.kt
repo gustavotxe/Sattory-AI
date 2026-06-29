@@ -21,6 +21,7 @@ data class GenerationOptions(
 
 interface LocalLlm {
     fun generate(prompt: String, options: GenerationOptions = GenerationOptions()): Flow<String>
+    suspend fun wasLastGenerationTokenLimited(): Boolean
     suspend fun resetConversation()
     suspend fun truncateConversation(messageCount: Int)
     fun close()
@@ -28,6 +29,7 @@ interface LocalLlm {
 
 class UnavailableLocalLlm(private val reason: String) : LocalLlm {
     override fun generate(prompt: String, options: GenerationOptions): Flow<String> = flow { error(reason) }
+    override suspend fun wasLastGenerationTokenLimited(): Boolean = false
     override suspend fun resetConversation() = Unit
     override suspend fun truncateConversation(messageCount: Int) = Unit
     override fun close() = Unit

@@ -24,6 +24,7 @@ llama_model * embedding_model = nullptr;
 llama_context * embedding_context = nullptr;
 bool backend_initialized = false;
 bool generation_active = false;
+bool last_generation_token_limited = false;
 int generated_tokens = 0;
 int max_generation_tokens = 0;
 int context_tokens = 0;
@@ -359,6 +360,7 @@ void begin_generation(
     if (generation_active) throw std::runtime_error("Já existe uma geração em andamento");
     if (user_prompt.empty()) throw std::runtime_error("O prompt está vazio");
 
+    last_generation_token_limited = false;
     messages.push_back({"user", user_prompt + "\n/no_think"});
     try {
         const int reserve = std::max(max_tokens, 1) + 16;
@@ -384,6 +386,7 @@ void begin_generation(
 bool next_token(std::string & piece) {
     if (!generation_active) return false;
     if (generated_tokens >= max_generation_tokens) {
+        last_generation_token_limited = true;
         piece = std::move(utf8_pending);
         utf8_pending.clear();
         finish_generation();
@@ -413,6 +416,7 @@ bool next_token(std::string & piece) {
 
 void reset_conversation() {
     messages.clear();
+    last_generation_token_limited = false;
     free_context();
 }
 
@@ -483,7 +487,14 @@ Java_org_sattory_app_llm_NativeLlmBridge_nativeNextToken(JNIEnv * env, jobject) 
 extern "C" JNIEXPORT void JNICALL
 Java_org_sattory_app_llm_NativeLlmBridge_nativeCancelGeneration(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(engine_mutex);
+    last_generation_token_limited = false;
     finish_generation();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_sattory_app_llm_NativeLlmBridge_nativeWasLastGenerationTokenLimited(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(engine_mutex);
+    return last_generation_token_limited ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
