@@ -120,7 +120,7 @@ class DesktopEmbeddingModelRepository(
                 }
             }
             if (downloaded == 0L || !DesktopGgufFileVerifier.isValid(files.partialModelFile)) {
-                throw IOException("Arquivo de embeddings baixado nao e um GGUF valido")
+                throw IOException("Arquivo de embeddings baixado não é um GGUF válido")
             }
             reportProgress(downloaded, total)
             downloadState.value = ModelDownloadState.Running(ModelDownloadProgress(ModelDownloadStage.Verifying))

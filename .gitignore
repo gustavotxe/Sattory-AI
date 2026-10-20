@@ -19,3 +19,54 @@ captures
 node_modules/
 local-models/
 desktopApp/build/native/
+
+# IDE and editor state
+.vscode/
+*.swp
+*.swo
+*~
+*.log
+
+# Native build output and generated binaries
+/cmake-build-*/
+/native/build/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# Android packages and build reports
+*.apk
+*.aab
+*.ap_
+*.hprof
+/lint-results-*.html
+/lint-results-*.xml
+
+# Local model downloads and partial transfers
+*.gguf
+*.gguf.part
+
+# Signing keys and local credentials
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+secrets.properties
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+google-services.json
+GoogleService-Info.plist
+
+# OS metadata
+Thumbs.db
+Desktop.ini

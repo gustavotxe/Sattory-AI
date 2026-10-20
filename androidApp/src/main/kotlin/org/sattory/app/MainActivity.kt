@@ -18,7 +18,6 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {
-        // The download continues either way; permission only controls whether progress can be shown.
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

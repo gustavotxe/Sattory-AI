@@ -30,6 +30,8 @@ kotlin {
     
     sourceSets {
         androidMain.dependencies {
+            implementation(libs.androidx.activity.compose)
+            implementation("com.tom-roush:pdfbox-android:2.0.27.0")
             implementation(libs.compose.uiToolingPreview)
         }
         commonMain.dependencies {
@@ -40,14 +42,14 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)
-            implementation(libs.androidx.lifecycle.viewmodelCompose)
-            implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
-            implementation(libs.koin.compose.viewmodel)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.androidx.room.runtime)
             implementation(libs.androidx.sqlite.bundled)
+        }
+        jvmMain.dependencies {
+            implementation("org.apache.pdfbox:pdfbox:3.0.7")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

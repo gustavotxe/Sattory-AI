@@ -1,15 +1,14 @@
 package org.sattory.app
 
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.Window
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.koin.core.module.Module
 import org.koin.core.qualifier.named
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
-import org.sattory.app.EMBEDDING_MODEL_REPOSITORY
 import org.sattory.app.conversation.data.RoomSavedConversationRepository
 import org.sattory.app.conversation.domain.SavedConversationRepository
 import org.sattory.app.llm.DesktopLocalLlm
@@ -23,12 +22,10 @@ import org.sattory.app.model.DesktopModelRepository
 import org.sattory.app.model.ModelRepository
 import org.sattory.app.platform.DesktopAppDirectories
 import org.sattory.app.platform.DesktopStorageRegistry
+import org.sattory.app.rag.data.DesktopPdfRepository
+import org.sattory.app.rag.RagTextChunker
 import org.sattory.app.rag.DesktopDatabaseBuilderFactory
-import org.sattory.app.rag.data.NativeTextEmbedder
-import org.sattory.app.rag.data.RagTextChunker
-import org.sattory.app.rag.data.RoomRagRepository
-import org.sattory.app.rag.data.local.DatabaseBuilderFactory
-import org.sattory.app.rag.data.local.SattoryDatabase
+import org.sattory.app.rag.domain.PdfRepository
 import org.sattory.app.rag.domain.RagRepository
 import org.sattory.app.rag.domain.TextEmbedder
 
@@ -37,6 +34,10 @@ fun main(args: Array<String>) {
     DesktopStorageRegistry(directories).registerStorageRoot()
     val platformModule = desktopPlatformModule(directories)
 
+    if ("--rag-smoke-test" in args) {
+        runRagSmokeTest(platformModule)
+        return
+    }
     if ("--smoke-test" in args) {
         runSmokeTest(platformModule)
         return
@@ -75,19 +76,28 @@ private fun desktopPlatformModule(directories: DesktopAppDirectories = DesktopAp
     single<ModelRepository>(named(EMBEDDING_MODEL_REPOSITORY)) {
         DesktopEmbeddingModelRepository(get())
     }
-    single<DatabaseBuilderFactory> { DesktopDatabaseBuilderFactory(get()) }
-    single { get<DatabaseBuilderFactory>().create() }
-    single { get<SattoryDatabase>().ragDao() }
-    single { get<SattoryDatabase>().savedConversationDao() }
+    single<DesktopDatabaseBuilderFactory> { DesktopDatabaseBuilderFactory(get()) }
+    single { get<org.sattory.app.rag.local.DatabaseBuilderFactory>().create() }
+    single { get<org.sattory.app.rag.local.SattoryDatabase>().ragDao() }
+    single { get<org.sattory.app.rag.local.SattoryDatabase>().savedConversationDao() }
     single<TextEmbedder> {
-        NativeTextEmbedder(
+        _root_ide_package_.org.sattory.app.rag.NativeTextEmbedder(
             modelPath = get<DesktopEmbeddingModelFiles>().modelFile.absolutePath,
             nativeLibraryPath = get<DesktopNativeLibraryResolver>().resolve().absolutePath,
         )
     }
     single { RagTextChunker() }
-    single<RagRepository> { RoomRagRepository(get(), get(), get()) }
-    single<SavedConversationRepository> { RoomSavedConversationRepository(get()) }
+    single<PdfRepository> { DesktopPdfRepository() }
+    single<RagRepository> {
+        _root_ide_package_.org.sattory.app.rag.RoomRagRepository(
+            get<org.sattory.app.rag.local.RagDao>(),
+            get(),
+            get()
+        )
+    }
+    single<SavedConversationRepository> {
+        RoomSavedConversationRepository(get<org.sattory.app.rag.local.SavedConversationDao>())
+    }
 }
 
 private fun runSmokeTest(platformModule: Module) {
@@ -130,6 +140,18 @@ private fun runEmbeddingSmokeTest(platformModule: Module) {
 
     try {
         val embedding = runBlocking {
+            for (text in listOf("Texto comum em portugues.", "Texto com ligaturas ﬁ ﬂ, simbolos ∑ ∞ e caracteres raros \u0378 \u0000.")) {
+                embedder.embedForDocument(text)
+            }
+            val document = (1..100).joinToString("\n") { page ->
+                "Pagina $page: O material explica a fotossintese, a absorcao de luz e a producao de energia. Simbolo raro: \u0378."
+            }
+            val chunks = RagTextChunker().chunk(document)
+            for (chunk in chunks) {
+                val vector = embedder.embedForDocument(chunk)
+                check(vector.size == 384 && vector.all { it.isFinite() }) { "Embedding invalido ao indexar documento" }
+            }
+            println("EMBEDDING_SMOKE_TEST_DOCUMENT_CHUNKS=${chunks.size}")
             embedder.embedForQuery("Qual e a capital do Brasil?")
         }
         check(embedding.size == 384) { "Dimensao inesperada do embedding: ${embedding.size}" }

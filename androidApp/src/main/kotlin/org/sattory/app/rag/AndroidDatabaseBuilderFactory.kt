@@ -4,11 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
-import org.sattory.app.rag.data.local.DatabaseBuilderFactory
-import org.sattory.app.rag.data.local.SattoryDatabase
-import org.sattory.app.rag.data.local.SattoryDatabaseMigrations
+import org.sattory.app.rag.local.DatabaseBuilderFactory
+import org.sattory.app.rag.local.SattoryDatabase
+import org.sattory.app.rag.local.SattoryDatabaseMigrations
 
-class AndroidDatabaseBuilderFactory(context: Context) : DatabaseBuilderFactory {
+class AndroidDatabaseBuilderFactory(context: Context) :
+    DatabaseBuilderFactory {
     private val appContext = context.applicationContext
 
     override fun create(): SattoryDatabase {

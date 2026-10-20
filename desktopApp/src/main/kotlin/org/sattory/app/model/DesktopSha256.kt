@@ -1,7 +1,9 @@
 package org.sattory.app.model
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
@@ -11,13 +13,15 @@ internal object DesktopSha256 {
 
     suspend fun of(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(file).use { stream ->
-            val buffer = ByteArray(BUFFER_SIZE)
-            while (true) {
-                currentCoroutineContext().ensureActive()
-                val count = stream.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
+        withContext(Dispatchers.IO) {
+            FileInputStream(file).use { stream ->
+                val buffer = ByteArray(BUFFER_SIZE)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val count = stream.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
             }
         }
         return toHex(digest.digest())

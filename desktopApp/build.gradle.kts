@@ -206,3 +206,21 @@ tasks.register<JavaExec>("nativeSmokeTest") {
     mainClass.set("org.sattory.app.MainKt")
     args("--smoke-test")
 }
+
+tasks.register<JavaExec>("nativeEmbeddingSmokeTest") {
+    group = "verification"
+    description = "Verifica embeddings de texto de documentos e consultas usando o GGUF local."
+    dependsOn("classes", buildNative)
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("org.sattory.app.MainKt")
+    args("--embedding-smoke-test")
+}
+
+tasks.register<JavaExec>("nativeRagSmokeTest") {
+    group = "verification"
+    description = "Valida recuperacao e respostas RAG repetiveis com os modelos locais, sem alterar colecoes."
+    dependsOn("classes", buildNative)
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("org.sattory.app.MainKt")
+    args("--rag-smoke-test")
+}

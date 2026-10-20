@@ -145,17 +145,52 @@ std::vector<llama_token> tokenize(const std::string & text, bool add_special) {
     return tokens;
 }
 
-std::vector<llama_token> tokenize_with_model(llama_model * target_model, const std::string & text, bool add_special) {
-    const llama_vocab * vocab = llama_model_get_vocab(target_model);
-    const int count = -llama_tokenize(vocab, text.c_str(), text.size(), nullptr, 0, add_special, true);
-    if (count <= 0) throw std::runtime_error("Falha ao tokenizar o texto para embeddings");
+std::vector<llama_token> tokenize_embedding_part(const llama_vocab * vocab, const std::string & text, bool add_special) {
+    const int count = -llama_tokenize(vocab, text.c_str(), text.size(), nullptr, 0, add_special, false);
+    if (count <= 0) return {};
     std::vector<llama_token> tokens(static_cast<size_t>(count));
-    if (llama_tokenize(vocab, text.c_str(), text.size(), tokens.data(), count, add_special, true) < 0) {
-        throw std::runtime_error("Falha ao tokenizar o texto para embeddings");
-    }
+    const int actual = llama_tokenize(vocab, text.c_str(), text.size(), tokens.data(), count, add_special, false);
+    if (actual < 0) throw std::runtime_error("Falha ao tokenizar o texto para embeddings");
+    tokens.resize(static_cast<size_t>(actual));
     return tokens;
 }
 
+std::vector<llama_token> tokenize_embedding_fallback(const llama_vocab * vocab, const std::string & text, llama_token unknown) {
+    try {
+        return tokenize_embedding_part(vocab, text, false);
+    } catch (const std::out_of_range &) {
+        size_t split = text.size() / 2;
+        while (split > 0 && (static_cast<unsigned char>(text[split]) & 0xC0) == 0x80) --split;
+        if (split == 0) return { unknown };
+        auto left = tokenize_embedding_fallback(vocab, text.substr(0, split), unknown);
+        auto right = tokenize_embedding_fallback(vocab, text.substr(split), unknown);
+        left.insert(left.end(), right.begin(), right.end());
+        return left;
+    }
+}
+
+std::vector<llama_token> tokenize_with_model(llama_model * target_model, const std::string & text, bool add_special) {
+    const llama_vocab * vocab = llama_model_get_vocab(target_model);
+    try {
+        return tokenize_embedding_part(vocab, text, add_special);
+    } catch (const std::out_of_range &) {
+        // E5 vocabularies may lack byte fallback. Only unsupported code points
+        // become UNK in embeddings; the original document is preserved in storage.
+        llama_token unknown = LLAMA_TOKEN_NULL;
+        for (llama_token token = 0; token < llama_vocab_n_tokens(vocab); ++token) {
+            if ((llama_vocab_get_attr(vocab, token) & LLAMA_TOKEN_ATTR_UNKNOWN) ||
+                std::string(llama_vocab_get_text(vocab, token)) == "<unk>") {
+                unknown = token;
+                break;
+            }
+        }
+        if (unknown == LLAMA_TOKEN_NULL) throw std::runtime_error("O vocabulario de embeddings nao suporta caracteres deste documento");
+        auto tokens = tokenize_embedding_fallback(vocab, text, unknown);
+        if (add_special && llama_vocab_get_add_bos(vocab)) tokens.insert(tokens.begin(), llama_vocab_bos(vocab));
+        if (add_special && llama_vocab_get_add_eos(vocab)) tokens.push_back(llama_vocab_eos(vocab));
+        return tokens;
+    }
+}
 std::vector<float> normalize_embedding(const float * input, int size) {
     if (input == nullptr || size <= 0) throw std::runtime_error("Embedding vazio");
     double sum = 0.0;
@@ -196,7 +231,12 @@ std::vector<float> embed_text(const std::string & text) {
     if (embedding_model == nullptr || embedding_context == nullptr) {
         throw std::runtime_error("O modelo de embeddings ainda nao foi carregado");
     }
-    auto tokens = tokenize_with_model(embedding_model, text, true);
+    std::vector<llama_token> tokens;
+    try {
+        tokens = tokenize_with_model(embedding_model, text, true);
+    } catch (const std::exception & error) {
+        throw std::runtime_error(std::string("Tokenizacao de embeddings: ") + error.what());
+    }
     if (tokens.size() > static_cast<size_t>(llama_n_ctx(embedding_context))) {
         throw std::runtime_error("Texto grande demais para o contexto de embeddings");
     }
@@ -212,7 +252,15 @@ std::vector<float> embed_text(const std::string & text) {
             batch.seq_id[index][0] = 0;
             batch.logits[index] = true;
         }
-        if (llama_decode(embedding_context, batch) != 0) {
+        int decode_result;
+        try {
+            decode_result = llama_model_has_encoder(embedding_model)
+                ? llama_encode(embedding_context, batch)
+                : llama_decode(embedding_context, batch);
+        } catch (const std::exception & error) {
+            throw std::runtime_error(std::string("Codificacao de embeddings: ") + error.what());
+        }
+        if (decode_result != 0) {
             throw std::runtime_error("Falha ao gerar embeddings");
         }
 
@@ -369,9 +417,13 @@ void begin_generation(
 
         sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
         llama_sampler_chain_add(sampler, llama_sampler_init_penalties(96, std::max(repeat_penalty, 1.0f), 0.0f, 0.0f));
-        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(std::clamp(top_p, 0.05f, 1.0f), 1));
-        llama_sampler_chain_add(sampler, llama_sampler_init_temp(std::max(temperature, 0.01f)));
-        llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+        if (temperature <= 0.0f) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+        } else {
+            llama_sampler_chain_add(sampler, llama_sampler_init_top_p(std::clamp(top_p, 0.05f, 1.0f), 1));
+            llama_sampler_chain_add(sampler, llama_sampler_init_temp(temperature));
+            llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+        }
         max_generation_tokens = std::max(max_tokens, 1);
         generated_tokens = 0;
         generated_response.clear();
@@ -454,10 +506,16 @@ Java_org_sattory_app_llm_NativeLlmBridge_nativeBeginGeneration(
     jint requested_context_size,
     jfloat temperature,
     jfloat top_p,
-    jfloat repeat_penalty
+    jfloat repeat_penalty,
+    jboolean isolated_context
 ) {
     std::lock_guard<std::mutex> lock(engine_mutex);
     try {
+        if (isolated_context) {
+            if (generation_active) throw std::runtime_error("Ja existe uma geracao em andamento");
+            messages.clear();
+            free_context();
+        }
         begin_generation(
             from_utf8_bytes(env, prompt),
             max_tokens,
@@ -468,6 +526,24 @@ Java_org_sattory_app_llm_NativeLlmBridge_nativeBeginGeneration(
         );
     } catch (const std::exception & error) {
         throw_java(env, error.what());
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_sattory_app_llm_NativeLlmBridge_nativeCountPromptTokens(JNIEnv * env, jobject, jbyteArray prompt) {
+    std::lock_guard<std::mutex> lock(engine_mutex);
+    auto saved_messages = std::move(messages);
+    try {
+        if (model == nullptr) throw std::runtime_error("Modelo local nao carregado");
+        messages = {{"user", from_utf8_bytes(env, prompt) + "\n/no_think"}};
+        const auto formatted = format_messages(true);
+        const auto count = static_cast<jint>(tokenize(formatted, true).size());
+        messages = std::move(saved_messages);
+        return count;
+    } catch (const std::exception & error) {
+        messages = std::move(saved_messages);
+        throw_java(env, error.what());
+        return 0;
     }
 }
 
@@ -530,7 +606,7 @@ Java_org_sattory_app_llm_NativeLlmBridge_nativeClose(JNIEnv *, jobject) {
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_sattory_app_rag_data_NativeEmbeddingBridge_nativeLoadEmbedding(
+Java_org_sattory_app_rag_NativeEmbeddingBridge_nativeLoadEmbedding(
     JNIEnv * env, jobject, jstring model_path
 ) {
     std::lock_guard<std::mutex> lock(engine_mutex);
@@ -544,8 +620,20 @@ Java_org_sattory_app_rag_data_NativeEmbeddingBridge_nativeLoadEmbedding(
     }
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_org_sattory_app_rag_NativeEmbeddingBridge_nativeCountEmbeddingTokens(JNIEnv * env, jobject, jbyteArray text) {
+    std::lock_guard<std::mutex> lock(engine_mutex);
+    try {
+        if (embedding_model == nullptr) throw std::runtime_error("Modelo de embeddings nao carregado");
+        return static_cast<jint>(tokenize_with_model(embedding_model, from_utf8_bytes(env, text), true).size());
+    } catch (const std::exception & error) {
+        throw_java(env, error.what());
+        return 0;
+    }
+}
+
 extern "C" JNIEXPORT jfloatArray JNICALL
-Java_org_sattory_app_rag_data_NativeEmbeddingBridge_nativeEmbed(
+Java_org_sattory_app_rag_NativeEmbeddingBridge_nativeEmbed(
     JNIEnv * env, jobject, jbyteArray text
 ) {
     std::lock_guard<std::mutex> lock(engine_mutex);
@@ -558,7 +646,7 @@ Java_org_sattory_app_rag_data_NativeEmbeddingBridge_nativeEmbed(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_sattory_app_rag_data_NativeEmbeddingBridge_nativeCloseEmbedding(JNIEnv *, jobject) {
+Java_org_sattory_app_rag_NativeEmbeddingBridge_nativeCloseEmbedding(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(engine_mutex);
     free_embedding_context();
     if (embedding_model != nullptr) {

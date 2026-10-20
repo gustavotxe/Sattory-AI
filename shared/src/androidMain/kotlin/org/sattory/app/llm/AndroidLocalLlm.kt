@@ -24,6 +24,7 @@ class AndroidLocalLlm(private val modelPath: String) : LocalLlm {
             options.temperature,
             options.topP,
             options.repeatPenalty,
+            options.isolatedContext,
         )
         var completed = false
         try {
@@ -37,6 +38,11 @@ class AndroidLocalLlm(private val modelPath: String) : LocalLlm {
             if (!completed) NativeLlmBridge.nativeCancelGeneration()
         }
     }.flowOn(inferenceDispatcher).withoutThinkingContent()
+
+    override suspend fun countPromptTokens(prompt: String): Int = withContext(inferenceDispatcher) {
+        ensureLoaded()
+        NativeLlmBridge.nativeCountPromptTokens(prompt.encodeToByteArray())
+    }
 
     private fun ensureLoaded() {
         if (loaded) return
@@ -75,7 +81,9 @@ internal object NativeLlmBridge {
         temperature: Float,
         topP: Float,
         repeatPenalty: Float,
+        isolatedContext: Boolean,
     )
+    external fun nativeCountPromptTokens(prompt: ByteArray): Int
     external fun nativeNextToken(): ByteArray?
     external fun nativeCancelGeneration()
     external fun nativeWasLastGenerationTokenLimited(): Boolean

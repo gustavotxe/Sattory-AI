@@ -92,7 +92,7 @@ class EmbeddingModelDownloadWorker(
                 }
             }
             if (downloaded == 0L || !GgufFileVerifier.isValid(partial)) {
-                throw IOException("Arquivo de embeddings baixado nao e um GGUF valido")
+                throw IOException("Arquivo de embeddings baixado não é um GGUF válido")
             }
             reportProgress(downloaded, total)
             setProgress(stageData(STAGE_VERIFYING))

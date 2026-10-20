@@ -4,9 +4,9 @@ import androidx.room.Room
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
 import org.sattory.app.platform.DesktopAppDirectories
-import org.sattory.app.rag.data.local.DatabaseBuilderFactory
-import org.sattory.app.rag.data.local.SattoryDatabase
-import org.sattory.app.rag.data.local.SattoryDatabaseMigrations
+import org.sattory.app.rag.local.DatabaseBuilderFactory
+import org.sattory.app.rag.local.SattoryDatabase
+import org.sattory.app.rag.local.SattoryDatabaseMigrations
 import java.io.File
 
 class DesktopDatabaseBuilderFactory(

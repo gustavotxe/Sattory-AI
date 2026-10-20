@@ -20,6 +20,8 @@ data class RagSource(
     val documentTitle: String,
     val text: String,
     val score: Float,
+    val chunkIndex: Int? = null,
+    val documentId: Long? = null,
 )
 
 sealed interface RagIndexState {
