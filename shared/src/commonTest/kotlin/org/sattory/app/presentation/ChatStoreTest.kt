@@ -30,7 +30,7 @@ import org.sattory.app.llm.LocalLlm
 import org.sattory.app.model.EmbeddingModelPreparationUseCase
 import org.sattory.app.model.ModelPreparationUseCase
 import org.sattory.app.model.ReadyModelRepository
-import org.sattory.app.rag.data.UnavailableRagRepository
+import org.sattory.app.rag.UnavailableRagRepository
 import org.sattory.app.rag.domain.CreateCollectionUseCase
 import org.sattory.app.rag.domain.DeleteCollectionUseCase
 import org.sattory.app.rag.domain.DocumentCollection

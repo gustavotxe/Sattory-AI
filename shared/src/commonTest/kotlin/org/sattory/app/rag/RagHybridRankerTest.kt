@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import org.sattory.app.rag.data.local.RagChunkWithDocumentEntity
+import org.sattory.app.rag.local.RagChunkWithDocumentEntity
 
 class RagHybridRankerTest {
     private val ranker = RagHybridRanker()

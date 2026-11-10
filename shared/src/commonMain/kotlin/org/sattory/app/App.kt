@@ -19,6 +19,8 @@ import org.sattory.app.model.EmbeddingModelPreparationUseCase
 import org.sattory.app.model.ModelPreparationUseCase
 import org.sattory.app.model.ModelRepository
 import org.sattory.app.model.ReadyModelRepository
+import org.sattory.app.presentation.ChatScreen
+import org.sattory.app.presentation.ChatStoreFactory
 import org.sattory.app.rag.UnavailableRagRepository
 import org.sattory.app.rag.UnavailableTextEmbedder
 import org.sattory.app.rag.domain.CreateCollectionUseCase
@@ -52,7 +54,7 @@ fun App(modules: List<Module> = listOf(defaultSattoryModule())) {
     KoinApplication(application = { modules(modules + commonSattoryModule()) }) {
         CloseLocalLlmOnDispose()
         CloseTextEmbedderOnDispose()
-        _root_ide_package_.org.sattory.app.presentation.ChatScreen(factory = koinInject())
+        ChatScreen(factory = koinInject())
     }
 }
 
@@ -89,7 +91,7 @@ private fun commonSattoryModule(): Module = module {
     single { GetSavedConversationUseCase(get()) }
     single { DeleteSavedConversationUseCase(get()) }
     factory {
-        _root_ide_package_.org.sattory.app.presentation.ChatStoreFactory(
+        ChatStoreFactory(
             localLlm = get(),
             modelPreparationUseCase = get(),
             embeddingModelPreparationUseCase = get(),

@@ -2,7 +2,7 @@ package org.sattory.app.rag.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import org.sattory.app.presentation.chat.ChatState
+import org.sattory.app.presentation.ChatState
 
 class RagAnswerFormatterTest {
     @Test

@@ -10,9 +10,9 @@ import org.sattory.app.conversation.domain.SaveConversationInput
 import org.sattory.app.conversation.domain.SavedConversationDetail
 import org.sattory.app.conversation.domain.SavedConversationRepository
 import org.sattory.app.conversation.domain.SavedConversationSummary
-import org.sattory.app.rag.data.currentEpochMillis
-import org.sattory.app.rag.data.local.SavedConversationDao
-import org.sattory.app.rag.data.local.SavedConversationEntity
+import org.sattory.app.rag.currentEpochMillis
+import org.sattory.app.rag.local.SavedConversationDao
+import org.sattory.app.rag.local.SavedConversationEntity
 
 class RoomSavedConversationRepository(
     private val dao: SavedConversationDao,

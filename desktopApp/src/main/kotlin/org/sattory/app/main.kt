@@ -23,8 +23,11 @@ import org.sattory.app.model.ModelRepository
 import org.sattory.app.platform.DesktopAppDirectories
 import org.sattory.app.platform.DesktopStorageRegistry
 import org.sattory.app.rag.data.DesktopPdfRepository
+import org.sattory.app.rag.NativeTextEmbedder
+import org.sattory.app.rag.RoomRagRepository
 import org.sattory.app.rag.RagTextChunker
 import org.sattory.app.rag.DesktopDatabaseBuilderFactory
+import org.sattory.app.rag.local.DatabaseBuilderFactory
 import org.sattory.app.rag.domain.PdfRepository
 import org.sattory.app.rag.domain.RagRepository
 import org.sattory.app.rag.domain.TextEmbedder
@@ -76,12 +79,12 @@ private fun desktopPlatformModule(directories: DesktopAppDirectories = DesktopAp
     single<ModelRepository>(named(EMBEDDING_MODEL_REPOSITORY)) {
         DesktopEmbeddingModelRepository(get())
     }
-    single<DesktopDatabaseBuilderFactory> { DesktopDatabaseBuilderFactory(get()) }
-    single { get<org.sattory.app.rag.local.DatabaseBuilderFactory>().create() }
+    single<DatabaseBuilderFactory> { DesktopDatabaseBuilderFactory(get()) }
+    single { get<DatabaseBuilderFactory>().create() }
     single { get<org.sattory.app.rag.local.SattoryDatabase>().ragDao() }
     single { get<org.sattory.app.rag.local.SattoryDatabase>().savedConversationDao() }
     single<TextEmbedder> {
-        _root_ide_package_.org.sattory.app.rag.NativeTextEmbedder(
+        NativeTextEmbedder(
             modelPath = get<DesktopEmbeddingModelFiles>().modelFile.absolutePath,
             nativeLibraryPath = get<DesktopNativeLibraryResolver>().resolve().absolutePath,
         )
@@ -89,7 +92,7 @@ private fun desktopPlatformModule(directories: DesktopAppDirectories = DesktopAp
     single { RagTextChunker() }
     single<PdfRepository> { DesktopPdfRepository() }
     single<RagRepository> {
-        _root_ide_package_.org.sattory.app.rag.RoomRagRepository(
+        RoomRagRepository(
             get<org.sattory.app.rag.local.RagDao>(),
             get(),
             get()

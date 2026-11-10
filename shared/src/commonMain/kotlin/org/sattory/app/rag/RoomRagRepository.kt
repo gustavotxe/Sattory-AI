@@ -5,8 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import org.sattory.app.rag.data.local.DocumentCollectionEntity
-import org.sattory.app.rag.data.local.RagDao
+import org.sattory.app.rag.local.DocumentCollectionEntity
+import org.sattory.app.rag.local.RagDao
 import org.sattory.app.rag.domain.CollectionDraft
 import org.sattory.app.rag.domain.CreateCollectionInput
 import org.sattory.app.rag.domain.DocumentCollection
@@ -91,7 +91,7 @@ class RoomRagRepository(
         }
         dao.replaceCollectionDocumentAndChunks(
             collectionId = collectionId,
-            title = title,
+            title = name,
             documentText = documentText,
             updatedAtMillis = currentEpochMillis(),
             chunks = embeddedChunks,

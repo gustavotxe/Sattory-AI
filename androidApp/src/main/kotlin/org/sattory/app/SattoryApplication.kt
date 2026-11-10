@@ -14,6 +14,9 @@ import org.sattory.app.model.EmbeddingModelFileSpec
 import org.sattory.app.model.ModelFileSpec
 import org.sattory.app.model.ModelRepository
 import org.sattory.app.rag.AndroidDatabaseBuilderFactory
+import org.sattory.app.rag.NativeTextEmbedder
+import org.sattory.app.rag.RagTextChunker
+import org.sattory.app.rag.RoomRagRepository
 import org.sattory.app.rag.data.AndroidPdfRepository
 import org.sattory.app.rag.domain.PdfRepository
 import org.sattory.app.rag.domain.RagRepository
@@ -36,18 +39,18 @@ class SattoryApplication : Application() {
             single { get<org.sattory.app.rag.local.SattoryDatabase>().ragDao() }
             single { get<org.sattory.app.rag.local.SattoryDatabase>().savedConversationDao() }
             single<TextEmbedder> {
-                _root_ide_package_.org.sattory.app.rag.NativeTextEmbedder(
+                NativeTextEmbedder(
                     EmbeddingModelFileSpec.file(applicationContext).absolutePath
                 )
             }
-            single { _root_ide_package_.org.sattory.app.rag.RagTextChunker() }
+            single { RagTextChunker() }
             single<PdfRepository> {
                 AndroidPdfRepository(
                     applicationContext
                 )
             }
             single<RagRepository> {
-                _root_ide_package_.org.sattory.app.rag.RoomRagRepository(
+                RoomRagRepository(
                     get<org.sattory.app.rag.local.RagDao>(),
                     get(),
                     get()
