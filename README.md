@@ -14,7 +14,7 @@ O aplicativo usa **RAG** (Retrieval-Augmented Generation/Geração aumentada por
 
 **Consulte documentos com RAG**
 
-<img src="images/screenshot_rag_test_empresa.png" alt="Versão desktop do Sattory AI consultando documentos de uma empresa com RAG" width="960">
+<img src="images/screenshot_rag_empresa.png" alt="Versão desktop do Sattory AI consultando documentos de uma empresa com RAG" width="900">
 
 - Crie coleções de documentos e faça perguntas sobre o conteúdo reunido nelas.
 - Importe PDFs com texto selecionável; o texto extraído é dividido em trechos e indexado para recuperação.
@@ -23,7 +23,7 @@ O aplicativo usa **RAG** (Retrieval-Augmented Generation/Geração aumentada por
 - Receba uma resposta baseada nas fontes selecionadas. O conteúdo do documento é tratado como material de consulta, não como instrução para o modelo.
 - PDFs digitalizados como imagem não passam por OCR e precisam ter o texto reconhecido previamente.
 
-<img src="images/screenshot_rag_test_manual_de_instrucoes.png" alt="Versão desktop do Sattory AI consultando um manual de instruções com RAG" width="960">
+<img src="images/screenshot_rag_manual_de_instrucoes.png" alt="Versão desktop do Sattory AI consultando um manual de instruções com RAG" width="900">
 
 **Use em diferentes dispositivos**
 
